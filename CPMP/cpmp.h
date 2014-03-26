@@ -6,6 +6,69 @@
 *       1. add seed in log file to make it possible to reproduce the calculation.
 *       2.
 *
+*
+    ******** algorithm ********
+    solve()
+    {
+        gen_init_solution();    // it can be gen_init_solution_randomly or gen_init_solution_greedily
+
+        while (stop condition not reached) {
+            loop until many no improvement search occured {
+                local_search();     // it can be local_search_with_variable_neighborhood() etc.
+                relocate_median();
+            }
+            perturbation();     // it can be restart, crossover, path_relinking, scatter_search or other diversification procedures
+        }
+    }
+
+    gen_init_solution_greedily()
+    {
+        loop P times {
+            select a node as a median randomly.
+            while (the node has capacity left) {
+                assign the closest node which has no median to this node.
+                add the distance to the objective function value.
+            }
+        }
+
+        while (there are nodes not assigned to median) {
+            assign it to the closest median.
+        }
+        fix_to_fit_constraint();
+    }
+
+    local_search_with_variable_neighborhood()
+    {
+        while (true) {
+            if (search_neighborhood_of_reassign_customer_to_new_median() find an improvement) {
+                update_current_and_best_solution();
+            } else if (search_neighborhood_of_swap_customers_from_two_medians() find an improvement) {
+                update_current_and_best_solution();
+            } else {
+                local search stop;
+            }
+        }
+    }
+
+    search_neighborhood_of_reassign_customer_to_new_median()
+    {
+        for (each customer) {
+            for (each median other than its original median) {
+                if (the capacity constraint is not violated) {
+                    calculate the delta value of the objective function by assuming that the customer is reassigned to the new median.
+                    if (the delta is less than the minimal delta found before) {
+                        record the index of the customer and the new median.
+                    } else if (the delta is equal to the minimal delta found before) {
+                        decide whether to record the index of the customer and the new median by the probability of 1/TotalOccurrenceOfThisMinima
+                    }
+                }
+            }
+        }
+
+        return the minimal delta;
+    }
+    ******** algorithm ********
+*
 ====================================================================
 */
 #ifndef CPMP_H
@@ -59,9 +122,9 @@ private:
     Demand demand;
     unsigned medianCap;
 
-    // representation of the solution
-    // typename TopologicalGraph<T_DIST>::VertexSet center;
-    // Assignment assign;
+    // representation of the current solution
+    typename TopologicalGraph<T_DIST>::VertexSet center;
+    Assignment assign;
 
 
     int maxIterCount;
@@ -104,6 +167,8 @@ void CPMP<T_DIST>::solve()
     solvingAlgorithm = ss.str();
 
 
+
+
 }
 
 template <typename T_DIST>
@@ -111,11 +176,11 @@ bool CPMP<T_DIST>::check() const
 {
     // check if the customers are assigned to the median in the median set
 
-    // fulfill the capacity constrain
+    // fulfill the capacity constraint
 
     // recalculate the objective function from scratch
-    for (Assignment::const_iterator iter = bestSolution.assign.begin( ); iter != bestSolution.assign.end( ); iter++) {
-        
+    for (Assignment::const_iterator iter = bestSolution.assign.begin(); iter != bestSolution.assign.end(); iter++) {
+
     }
 
     return true;
