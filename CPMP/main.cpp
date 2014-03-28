@@ -9,7 +9,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
     fname << "pmedcap1(" << instanceNum << ").txt";
     ifstream ifs( fname.str() );
 
-    unsigned problemNum, bestSolutionValue;
+    unsigned problemNum, optima;
     unsigned vertexNum, medianNum, medianCap;
 
     int nodeSeqNum;
@@ -19,7 +19,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
     GeometricalGraph::PointList pl;
     CPMP<double>::DemandList dl;
 
-    ifs >> problemNum >> bestSolutionValue;
+    ifs >> problemNum >> optima;
     ifs >> vertexNum >> medianNum >> medianCap;
 
     while (vertexNum--) {
@@ -33,6 +33,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 
     GeometricalGraph gg( pl );
     UndirectedGraph<double> dug( gg );
+    dug.getDistSeqTable();
     // UndirectedGraph<unsigned> uug( gg );
 
     // for each instance, run some times for judging average performance
@@ -46,7 +47,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
             if (!cpmp.check()) {
                 csvFile << "[LogicError] ";
             }
-            //cpmp.appendResultToSheet( fname.str(), csvFile );
+            cpmp.appendResultToSheet( fname.str(), csvFile );
         }
     }
 

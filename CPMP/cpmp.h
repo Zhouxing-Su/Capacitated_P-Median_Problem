@@ -108,19 +108,19 @@ public:
 
     struct Solution
     {
-        Solution( unsigned medianNum, unsigned vertexAllocNum, unsigned vertexNum )
-        : medianList( medianNum ), medianIndex( vertexAllocNum, INVALID_INDEX ), customerIndex( vertexAllocNum ),
-        assignMat( vertexAllocNum, std::vector<int>( vertexNum, INVALID_INDEX ) ),
-        restCap( vertexAllocNum, 0 ), customerCount( vertexAllocNum, 0 )
+        Solution() {}
+        Solution( const CPMP &cpmp ) : medianList( cpmp.medianNum ), medianIndex( cpmp.graph.vertexAllocNum, INVALID_INDEX ),
+            customerIndex( cpmp.graph.vertexAllocNum ), assignMat( cpmp.graph.vertexAllocNum, std::vector<int>( cpmp.graph.vertexNum, INVALID_INDEX ) ),
+            restCap( cpmp.graph.vertexAllocNum, 0 ), customerCount( cpmp.graph.vertexAllocNum, 0 ), totalDist( 0 )
         {
         }
-
-        Solution() {}
 
         bool isMedian( int newMedian )
         {
             return (medianIndex[newMedian] != INVALID_INDEX);
         }
+
+        typename TopologicalGraph<T_DIST>::Distance totalDist;
 
         MedianList medianList;          // has a fixed length of P
         std::vector<int> medianIndex;   // i == medianList[medianIndex[i]]
@@ -132,6 +132,19 @@ public:
 
     struct Output
     {
+        Output() {}
+        Output( CPMP &cpmp, const Solution& s, int iterationCount ) : totalDist( s.totalDist ),
+            iterCount( iterationCount ), median( s.medianList ), assign( cpmp.graph.vertexNum )
+        {
+            cpmp.timer.record();
+            duration = cpmp.timer.getTotalDuration();
+
+            int j = 0;
+            for (int i = cpmp.graph.minVertexIndex; i <= cpmp.graph.maxVertexIndex; i++) {
+                assign[j++] = s.customerIndex[i].med;
+            }
+        }
+
         typename TopologicalGraph<T_DIST>::Distance totalDist;
 
         MedianList median;
@@ -140,6 +153,11 @@ public:
         int iterCount;
         double duration;
     };
+
+    // known conditions
+    const UndirectedGraph<T_DIST> graph;
+    const DemandList demandList;
+    const CapacityList capList;
 
     // the map from indices to vertex of demand should be the same as the ug.
     CPMP( UndirectedGraph<T_DIST> &ug, const DemandList &demand, unsigned medianNum, unsigned medianCap, int maxIterCount );
@@ -160,14 +178,9 @@ private:
 
     Solution curSln;
 
-    // known conditions
-    UndirectedGraph<T_DIST> graph;
-    const DemandList demandList;
-    const CapacityList capList;
-
     // solution output and statistic data
     int maxIterCount;
-    Output bestSolution;
+    Output optima;
     Timer timer;
     std::string solvingAlgorithm;
 };
@@ -187,9 +200,8 @@ private:
 template <typename T_DIST>
 CPMP<T_DIST>::CPMP( UndirectedGraph<T_DIST> &ug, const DemandList &dl, unsigned mn, unsigned mc, int mic )
 : graph( ug ), demandList( dl ), medianNum( mn ), capList( ug.vertexAllocNum, mc ),
-maxIterCount( mic ), curSln( mn, ug.vertexAllocNum, ug.vertexNum )
+maxIterCount( mic ), curSln( *this )
 {
-    graph.getDistSeqTable();
 }
 
 template <typename T_DIST>
@@ -205,6 +217,7 @@ void CPMP<T_DIST>::solve()
     solvingAlgorithm = ss.str();
 
     genInitSolution();
+    optima = Output( *this, curSln, 0 );
 
 
 }
@@ -212,13 +225,32 @@ void CPMP<T_DIST>::solve()
 template <typename T_DIST>
 bool CPMP<T_DIST>::check() const
 {
-    // check if the customers are assigned to the median in the median set
-
-    // fulfill the capacity constraint
+    const double error = 0.01;
+    typename TopologicalGraph<T_DIST>::Distance totalDist = 0;
+    CapacityList restCap( capList );
 
     // recalculate the objective function from scratch
-    for (AssignList::const_iterator iter = bestSolution.assign.begin(); iter != bestSolution.assign.end(); iter++) {
+    int i = graph.minVertexIndex;
+    for (AssignList::const_iterator iter = optima.assign.begin(); iter != optima.assign.end(); iter++, i++) {
+        // check if the median really exist
+        bool isMedian = false;
+        for (MedianList::const_iterator iterm = optima.median.begin(); iterm != optima.median.end(); iterm++) {
+            if (*iterm == *iter) {
+                isMedian = true;
+                break;
+            }
+        }
+        // check the capacity
+        if (isMedian && ((restCap[*iter] -= demandList[i]) >= 0)) {
+            totalDist += graph.distance( *iter, i );
+        } else {
+            return false;
+        }
+    }
 
+    // check the objective function value
+    if ((totalDist - optima.totalDist)*(totalDist - optima.totalDist) > error) {
+        return false;
     }
 
     return true;
@@ -252,6 +284,7 @@ void CPMP<T_DIST>::genFeasibleInitSolutionByRestarting()
             // add this median to current solution
             sln.medianList[curMedianNum] = newMedian;
             sln.medianIndex[newMedian] = curMedianNum;
+            sln.customerIndex[newMedian].med = newMedian;   // for convenience to generate output
             // set itself as its median and update the capacity
             sln.restCap[newMedian] = capList[newMedian] - demandList[newMedian];
         }
@@ -269,6 +302,7 @@ void CPMP<T_DIST>::genFeasibleInitSolutionByRestarting()
                         sln.customerIndex[i].seq = sln.customerCount[med];
                         sln.customerCount[med]++;
                         sln.restCap[med] -= demandList[i];
+                        sln.totalDist += graph.distance( med, i );
                         break;
                     }
                 }
@@ -297,6 +331,7 @@ void CPMP<T_DIST>::genFeasibleInitSolutionByRepairing()
         // add this median to current solution
         curSln.medianList[curMedianNum] = newMedian;
         curSln.medianIndex[newMedian] = curMedianNum;
+        sln.customerIndex[newMedian].med = newMedian;   // for convenience to generate output
         // set itself as its median and update the capacity
         curSln.restCap[newMedian] = capList[newMedian] - demandList[newMedian];
     }
@@ -314,6 +349,7 @@ void CPMP<T_DIST>::genFeasibleInitSolutionByRepairing()
                     curSln.customerIndex[i].seq = curSln.customerCount[med];
                     curSln.customerCount[med]++;
                     curSln.restCap[med] -= demandList[i];
+                    curSln.totalDist += graph.distance( med, i );
                     break;
                 }
             }
@@ -326,6 +362,7 @@ void CPMP<T_DIST>::genFeasibleInitSolutionByRepairing()
                         curSln.customerIndex[i].seq = curSln.customerCount[med];
                         curSln.customerCount[med]++;
                         curSln.restCap[med] -= demandList[i];
+                        curSln.totalDist += graph.distance( med, i );
                         break;
                     }
                 }
@@ -340,7 +377,7 @@ void CPMP<T_DIST>::genFeasibleInitSolutionByRepairing()
 template <typename T_DIST>
 void CPMP<T_DIST>::printResult( std::ostream &os ) const
 {
-    os << bestSolution.totalDist << std::endl;
+    os << optima.totalDist << std::endl;
 }
 
 template <typename T_DIST>
@@ -357,18 +394,18 @@ void CPMP<T_DIST>::appendResultToSheet( const std::string &instanceFileName, std
         << solvingAlgorithm << ", "
         << maxIterCount << ", "
         << Random::seed << ", "
-        << bestSolution.duration << ", "
-        << bestSolution.iterCount << ", "
-        << bestSolution.totalDist << ", ";
+        << optima.duration << ", "
+        << optima.iterCount << ", "
+        << optima.totalDist << ", ";
 
-    for (MedianList::const_iterator iter = bestSolution.median.begin(); iter != bestSolution.median.end(); iter++) {
+    for (MedianList::const_iterator iter = optima.median.begin(); iter != optima.median.end(); iter++) {
         csvFile << *iter << '|';
     }
 
     csvFile << ", ";
 
-    for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
-        csvFile << bestSolution.assign[i] << '|';
+    for (AssignList::const_iterator iter = optima.assign.begin(); iter != optima.assign.end(); iter++) {
+        csvFile << *iter << '|';
     }
     csvFile << std::endl;
 }
