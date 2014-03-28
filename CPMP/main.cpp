@@ -1,5 +1,7 @@
 #include "cpmp.h"
 
+using namespace std;
+
 
 int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 {
@@ -8,19 +10,19 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
     ifstream ifs( fname.str() );
 
     unsigned problemNum, bestSolutionValue;
-    unsigned nodeNum, medianNum, medianCap;
+    unsigned vertexNum, medianNum, medianCap;
 
     int nodeSeqNum;
     GeometricalGraph::Coord x, y;
     int demand;
 
     GeometricalGraph::PointList pl;
-    CPMP<double>::Demand dl;
+    CPMP<double>::DemandList dl;
 
     ifs >> problemNum >> bestSolutionValue;
-    ifs >> nodeNum >> medianNum >> medianCap;
+    ifs >> vertexNum >> medianNum >> medianCap;
 
-    while (nodeNum--) {
+    while (vertexNum--) {
         ifs >> nodeSeqNum >> x >> y >> demand;
         pl.push_back( GeometricalGraph::Point( x, y ) );
         dl.push_back( demand );
