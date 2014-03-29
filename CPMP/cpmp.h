@@ -13,10 +13,10 @@
 //    gen_init_solution();    // it can be gen_init_solution_randomly or gen_init_solution_greedily
 //
 //    while (stop condition not reached) {
-//        loop until many no improvement search occured{
-//        local_search();     // it can be local_search_with_variable_neighborhood() etc.
-//        relocate_median();
-//    }
+//        loop until many no improvement search occured {
+//            local_search();     // it can be local_search_with_variable_neighborhood() etc.
+//            relocate_median();
+//        }
 //        perturbation();     // it can be restart, crossover, path_relinking, scatter_search or other diversification procedures
 //    }
 //}
@@ -176,6 +176,10 @@ private:
     void genFeasibleInitSolutionByRestarting();
     void genFeasibleInitSolutionByRepairing();  // not finished
 
+    void localSearchOnReassignCustomerNeighborhood();
+    bool exploreShiftCustomerNeighborhood();
+    bool exploreSwapCustomerNeighborhood();
+
     Solution curSln;
 
     // solution output and statistic data
@@ -219,42 +223,47 @@ void CPMP<T_DIST>::solve()
     genInitSolution();
     optima = Output( *this, curSln, 0 );
 
+    for (int iterCount = 0; iterCount < maxIterCount; iterCount++) {
+        localSearchOnReassignCustomerNeighborhood();
+        // localSearchOnRelocateMedianNeighborhood();
+    }
+}
 
+
+
+
+
+
+template <typename T_DIST>
+void CPMP<T_DIST>::localSearchOnReassignCustomerNeighborhood()
+{
+    bool isImproved = false;
+    while (true) {
+        isImproved = exploreShiftCustomerNeighborhood();
+        if (!isImproved) {
+            isImproved = exploreSwapCustomerNeighborhood();
+            if (!isImproved) {  // local optima of the two neighborhoods found
+                return;
+            }
+        }
+    }
 }
 
 template <typename T_DIST>
-bool CPMP<T_DIST>::check() const
+bool CPMP<T_DIST>::exploreShiftCustomerNeighborhood()
 {
-    const double error = 0.01;
-    typename TopologicalGraph<T_DIST>::Distance totalDist = 0;
-    CapacityList restCap( capList );
-
-    // recalculate the objective function from scratch
-    int i = graph.minVertexIndex;
-    for (AssignList::const_iterator iter = optima.assign.begin(); iter != optima.assign.end(); iter++, i++) {
-        // check if the median really exist
-        bool isMedian = false;
-        for (MedianList::const_iterator iterm = optima.median.begin(); iterm != optima.median.end(); iterm++) {
-            if (*iterm == *iter) {
-                isMedian = true;
-                break;
-            }
-        }
-        // check the capacity
-        if (isMedian && ((restCap[*iter] -= demandList[i]) >= 0)) {
-            totalDist += graph.distance( *iter, i );
-        } else {
-            return false;
-        }
-    }
-
-    // check the objective function value
-    if ((totalDist - optima.totalDist)*(totalDist - optima.totalDist) > error) {
-        return false;
-    }
-
-    return true;
+    
 }
+
+template <typename T_DIST>
+bool CPMP<T_DIST>::exploreSwapCustomerNeighborhood()
+{
+    return false;
+}
+
+
+
+
 
 template <typename T_DIST>
 void CPMP<T_DIST>::genInitSolution()
@@ -373,6 +382,49 @@ void CPMP<T_DIST>::genFeasibleInitSolutionByRepairing()
     // repair current solution to a feasible solution
     //repairCurSolution();
 }
+
+
+
+
+
+template <typename T_DIST>
+bool CPMP<T_DIST>::check() const
+{
+    const double ERROR = 0.01;
+    typename TopologicalGraph<T_DIST>::Distance totalDist = 0;
+    CapacityList restCap( capList );
+
+    // recalculate the objective function from scratch
+    int i = graph.minVertexIndex;
+    for (AssignList::const_iterator iter = optima.assign.begin(); iter != optima.assign.end(); iter++, i++) {
+        // check if the median really exist
+        bool isMedian = false;
+        for (MedianList::const_iterator iterm = optima.median.begin(); iterm != optima.median.end(); iterm++) {
+            if (*iterm == *iter) {
+                isMedian = true;
+                break;
+            }
+        }
+        // check the capacity
+        if (isMedian && ((restCap[*iter] -= demandList[i]) >= 0)) {
+            totalDist += graph.distance( *iter, i );
+        } else {
+            return false;
+        }
+    }
+
+    // check the objective function value
+    if ((totalDist - optima.totalDist)*(totalDist - optima.totalDist) > ERROR) {
+        return false;
+    }
+
+    return true;
+}
+
+
+
+
+
 
 template <typename T_DIST>
 void CPMP<T_DIST>::printResult( std::ostream &os ) const

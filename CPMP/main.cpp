@@ -38,7 +38,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 
     // for each instance, run some times for judging average performance
     const int runTime = 2;
-    const int maxIterCountBase = 12800;
+    const int maxIterCountBase = 1000;
     for (int i = 1; i <= runTime; i++) {
         {
             CPMP<double> cpmp( dug, dl, medianNum, medianCap, i * maxIterCountBase );
