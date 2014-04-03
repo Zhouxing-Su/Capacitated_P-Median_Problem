@@ -115,16 +115,61 @@ public:
         {
         }
 
-        bool isMedian( int newMedian )
+        bool isMedian( int vertex )
         {
-            return (medianIndex[newMedian] != INVALID_INDEX);
+            return (medianIndex[vertex] != INVALID_INDEX);
         }
 
-        typename TopologicalGraph<T_DIST>::Distance totalDist;
+        // move customer from oldMedian to newMedian
+        // (may make the capacity a negative value)
+        void shiftCustomer( const CPMP &cpmp, int customer, int newMedian, T_DIST distDelta )
+        {
+            int oldMedian = customerIndex[customer].med;
+            // reset the index of the last customer of the old median to the index of the median to be moved 
+            // and update customerCount of the old median
+            customerIndex[assignMat[oldMedian][--customerCount[oldMedian]]].seq = customerIndex[customer].seq;
+            // replace the customer to be moved with the last customer of the old median
+            assignMat[oldMedian][customerIndex[customer].seq] = assignMat[oldMedian][customerCount[oldMedian]];
+            // assign the customer to the new median and update customerCount of the new median
+            customerIndex[customer].med = newMedian;
+            customerIndex[customer].seq = customerCount[newMedian];
+            assignMat[newMedian][customerCount[newMedian]++] = customer;
+            // update the capacity of the medians
+            restCap[oldMedian] += cpmp.demandList[customer];
+            restCap[newMedian] -= cpmp.demandList[customer];
+            // update the total distance
+            totalDist += distDelta;
+        }
+
+        // exchange the medians of cutsomer1 and customer2
+        // (may make the capacity a negative value)
+        void swapCustomer( const CPMP &cpmp, int customer1, int customer2, T_DIST distDelta )
+        {
+            int median1 = customerIndex[customer1].med;
+            int median2 = customerIndex[customer2].med;
+            int seq1 = customerIndex[customer1].seq;
+            int seq2 = customerIndex[customer2].seq;
+            // update assign matrix and its indices
+            customerIndex[customer1].med = median2;
+            customerIndex[customer2].med = median1;
+            customerIndex[customer1].seq = seq2;
+            customerIndex[customer2].seq = seq1;
+            assignMat[median1][seq1] = customer2;
+            assignMat[median2][seq2] = customer1;
+            // update the capacity of the medians
+            Unit capDelta = cpmp.demandList[customer1] - cpmp.demandList[customer2];
+            restCap[median1] += capDelta;
+            restCap[median2] -= capDelta;
+            // update the total distance
+            totalDist += distDelta;
+        }
+
+        T_DIST totalDist;
 
         MedianList medianList;          // has a fixed length of P
         std::vector<int> medianIndex;   // i == medianList[medianIndex[i]]
-        AssignMat assignMat;            // the median itself will not appear in this matrix as a costomer
+        AssignMat assignMat;            // line i record customers assigned to median i (if it is a median)
+        // the median itself will not appear in this matrix as a costomer
         std::vector<int> customerCount; // customerCount[i] indicate the number of customers ( other than itself ) served by vertex i if it is an median
         std::vector<CustomerIndex> customerIndex;   // i == assignMat[customerIndex[i].med][customerIndex[i].seq]
         CapacityList restCap;
@@ -183,6 +228,10 @@ private:
     Solution curSln;
 
     // solution output and statistic data
+    int validMoveCount;
+    int invalidMoveCount;
+
+    int iterCount;
     int maxIterCount;
     Output optima;
     Timer timer;
@@ -204,7 +253,7 @@ private:
 template <typename T_DIST>
 CPMP<T_DIST>::CPMP( UndirectedGraph<T_DIST> &ug, const DemandList &dl, unsigned mn, unsigned mc, int mic )
 : graph( ug ), demandList( dl ), medianNum( mn ), capList( ug.vertexAllocNum, mc ),
-maxIterCount( mic ), curSln( *this )
+iterCount( 0 ), maxIterCount( mic ), curSln( *this ), validMoveCount( 0 ), invalidMoveCount( 0 )
 {
 }
 
@@ -223,10 +272,11 @@ void CPMP<T_DIST>::solve()
     genInitSolution();
     optima = Output( *this, curSln, 0 );
 
-    for (int iterCount = 0; iterCount < maxIterCount; iterCount++) {
+    while (iterCount++ < maxIterCount) {
         localSearchOnReassignCustomerNeighborhood();
         // localSearchOnRelocateMedianNeighborhood();
     }
+    //std::cout << "[invalidMoveCount]" << invalidMoveCount << " [validMoveCount]" << validMoveCount << endl;
 }
 
 
@@ -243,6 +293,9 @@ void CPMP<T_DIST>::localSearchOnReassignCustomerNeighborhood()
         if (!isImproved) {
             isImproved = exploreSwapCustomerNeighborhood();
             if (!isImproved) {  // local optima of the two neighborhoods found
+                if (curSln.totalDist < optima.totalDist) {
+                    optima = Output( *this, curSln, iterCount );
+                }
                 return;
             }
         }
@@ -252,13 +305,91 @@ void CPMP<T_DIST>::localSearchOnReassignCustomerNeighborhood()
 template <typename T_DIST>
 bool CPMP<T_DIST>::exploreShiftCustomerNeighborhood()
 {
-    
+    T_DIST delta;
+    T_DIST minDelta = 0;
+    int customer = INVALID_INDEX;
+    int newMedian = INVALID_INDEX;
+
+    RandSelect rs;
+
+    for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
+        T_DIST originalDist = graph.distance( i, curSln.customerIndex[i].med );
+        for (MedianList::const_iterator iter = curSln.medianList.begin();
+            iter != curSln.medianList.end(); iter++) {
+            if ((!curSln.isMedian( i )) && (curSln.customerIndex[i].med != *iter)) {
+                if (curSln.restCap[*iter] >= demandList[i]) {
+                    //validMoveCount++;
+                    delta = graph.distance( i, *iter ) - originalDist;
+                    if ((delta == minDelta) && rs.isSelected()) {
+                        minDelta = delta;
+                        customer = i;
+                        newMedian = *iter;
+                    } else if ((delta < minDelta)) {
+                        rs.reset( 2 );
+                        minDelta = delta;
+                        customer = i;
+                        newMedian = *iter;
+                    }
+                } else {
+                    //invalidMoveCount++;
+                }
+            }
+        }
+    }
+
+    if (customer == INVALID_INDEX) {
+        return false;
+    } else {
+        curSln.shiftCustomer( *this, customer, newMedian, minDelta );
+        return true;
+    }
 }
 
 template <typename T_DIST>
 bool CPMP<T_DIST>::exploreSwapCustomerNeighborhood()
 {
-    return false;
+    T_DIST minDelta = 0;
+    int c1 = INVALID_INDEX;
+    int c2 = INVALID_INDEX;
+
+    RandSelect rs;
+
+    for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
+        int medi = curSln.customerIndex[i].med;
+        for (int j = graph.minVertexIndex; j <= graph.maxVertexIndex; j++) {
+            int medj = curSln.customerIndex[j].med;
+            if ((!curSln.isMedian( i )) && !curSln.isMedian( j ) && (medi != medj)) {
+                Unit capDelta = demandList[i] - demandList[j];
+                if (((curSln.restCap[medi] + capDelta) > 0)
+                    && ((curSln.restCap[medj] - capDelta) > 0)) {
+                    //validMoveCount++;
+                    T_DIST distDelta = graph.distance( i, medj )
+                        + graph.distance( j, medi )
+                        - graph.distance( i, medi )
+                        - graph.distance( j, medj );
+                    if ((distDelta == minDelta) && rs.isSelected()) {
+                        minDelta = distDelta;
+                        c1 = i;
+                        c2 = j;
+                    } else if ((distDelta < minDelta)) {
+                        rs.reset( 2 );
+                        minDelta = distDelta;
+                        c1 = i;
+                        c2 = j;
+                    }
+                } else {
+                    //invalidMoveCount++;
+                }
+            }
+        }
+    }
+
+    if ((c1 == INVALID_INDEX) || (c2 == INVALID_INDEX)) {
+        return false;
+    } else {
+        curSln.swapCustomer( *this, c1, c2, minDelta );
+        return true;
+    }
 }
 
 
@@ -429,7 +560,7 @@ bool CPMP<T_DIST>::check() const
 template <typename T_DIST>
 void CPMP<T_DIST>::printResult( std::ostream &os ) const
 {
-    os << optima.totalDist << std::endl;
+    os << (graph.isMultiplied() ? (optima.totalDist / static_cast<double>(graph.DistMultiplication)) : optima.totalDist) << std::endl;
 }
 
 template <typename T_DIST>
@@ -448,7 +579,7 @@ void CPMP<T_DIST>::appendResultToSheet( const std::string &instanceFileName, std
         << Random::seed << ", "
         << optima.duration << ", "
         << optima.iterCount << ", "
-        << optima.totalDist << ", ";
+        << (graph.isMultiplied() ? (optima.totalDist / static_cast<double>(graph.DistMultiplication)) : optima.totalDist) << ", ";
 
     for (MedianList::const_iterator iter = optima.median.begin(); iter != optima.median.end(); iter++) {
         csvFile << *iter << '|';

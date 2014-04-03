@@ -5,6 +5,8 @@ using namespace std;
 
 int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 {
+    typedef int DistType;
+
     ostringstream fname;
     fname << "pmedcap1(" << instanceNum << ").txt";
     ifstream ifs( fname.str() );
@@ -17,7 +19,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
     int demand;
 
     GeometricalGraph::PointList pl;
-    CPMP<double>::DemandList dl;
+    CPMP<DistType>::DemandList dl;
 
     ifs >> problemNum >> optima;
     ifs >> vertexNum >> medianNum >> medianCap;
@@ -32,16 +34,17 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 
 
     GeometricalGraph gg( pl );
-    UndirectedGraph<double> dug( gg );
-    dug.getDistSeqTable();
-    // UndirectedGraph<unsigned> uug( gg );
+    //UndirectedGraph<double> dug( gg );
+    //dug.getDistSeqTable();
+    UndirectedGraph<DistType> uug( gg );
+    uug.getDistSeqTable();
 
     // for each instance, run some times for judging average performance
     const int runTime = 2;
     const int maxIterCountBase = 1000;
     for (int i = 1; i <= runTime; i++) {
         {
-            CPMP<double> cpmp( dug, dl, medianNum, medianCap, i * maxIterCountBase );
+            CPMP<DistType> cpmp( uug, dl, medianNum, medianCap, i * maxIterCountBase );
             cpmp.solve();
             cpmp.printResult( cout );
             if (!cpmp.check()) {
