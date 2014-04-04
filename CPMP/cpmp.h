@@ -566,7 +566,7 @@ void CPMP<T_DIST>::printResult( std::ostream &os ) const
 template <typename T_DIST>
 void CPMP<T_DIST>::initResultSheet( std::ofstream &csvFile )
 {
-    csvFile << "Date, Instance, Algorithm, TotalIter, RandSeed, Duration, IterCount, TotalDist, Centers, Assignment" << std::endl;
+    csvFile << "Date, Instance, Algorithm, TotalIter, RandSeed, Duration, IterCount, TotalDist, Medians, Assignment" << std::endl;
 }
 
 template <typename T_DIST>
