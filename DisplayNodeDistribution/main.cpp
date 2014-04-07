@@ -64,7 +64,10 @@ int main( void )
             assignment.push_back( node );
         }
 
-        /// Create white empty images
+        // Create a white background image
+        // calculate the apropriate width and height, then regularize the coordinates
+
+
         int row, col;
         Mat distributionImage( row, col, CV_8UC3, RGBcolor::WHITE );
 
