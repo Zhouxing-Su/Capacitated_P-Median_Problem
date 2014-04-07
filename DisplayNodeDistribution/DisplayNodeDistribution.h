@@ -1,6 +1,5 @@
 #ifndef DISPLAY_NODE_DISTRIBUTION_H
 
-#include <Windows.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <iostream>
