@@ -9,9 +9,7 @@ int main( void )
 
     ifstream logFile( "../CPMP/log.csv" );
 
-    char c;
     char buf[MAX_STR_LEN];
-
     char date[MAX_STR_LEN], instance[MAX_STR_LEN], algorithm[MAX_STR_LEN],
         totalIter[MAX_STR_LEN], randSeed[MAX_STR_LEN], duration[MAX_STR_LEN],
         iterCount[MAX_STR_LEN], totalDist[MAX_STR_LEN];
@@ -30,25 +28,40 @@ int main( void )
         logFile.getline( totalDist, MAX_STR_LEN, ',' );
 
         // read instance to get the median number, node number and coordinate of nodes
-        ifstream instFile( instance );
-        int medianNum, nodeNum;
+        ifstream instFile( instance + 1 );    // skip a space
+
+        unsigned problemNum, optima;
+        unsigned vertexNum, medianNum, medianCap;
+
+        int nodeSeqNum;
+        GeometricalGraph::Coord x, y;
+        int demand;
+
+        GeometricalGraph::PointList pl;
+
+        instFile >> problemNum >> optima;
+        instFile >> vertexNum >> medianNum >> medianCap;
+
+        while (vertexNum--) {
+            instFile >> nodeSeqNum >> x >> y >> demand;
+            pl.push_back( GeometricalGraph::Point( x, y ) );
+        }
+
+        instFile.close();
 
         // read the result
+        char c;
         vector<int> medians, assignment;
         for (int i = 0; i < medianNum; i++) {
             int median;
             logFile >> median >> c;
-
-
-
+            medians.push_back( median );
         }
-
-        for (int i = 0; i < nodeNum; i++) {
+        logFile >> c;   // read the comma
+        for (int i = 0; i < vertexNum; i++) {
             int node;
             logFile >> node >> c;
-
-
-
+            assignment.push_back( node );
         }
 
         /// Create white empty images

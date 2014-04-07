@@ -7,6 +7,8 @@
 #include <vector>
 #include <string>
 
+#include "../CPPutilibs/Graph.h"
+
 namespace RGBcolor
 {
     const cv::Scalar WHITE( 255, 255, 255 );

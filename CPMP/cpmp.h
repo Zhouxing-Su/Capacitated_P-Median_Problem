@@ -78,15 +78,15 @@
 #include <sstream>
 #include <vector>
 #include <set>
-#include "CPPutilibs/Graph.h"
-#include "CPPutilibs/Random.h"
-#include "CPPutilibs/RangeRand.h"
-#include "CPPutilibs/RandSelect.h"
-#include "CPPutilibs/Timer.h"
+#include "../CPPutilibs/Graph.h"
+#include "../CPPutilibs/Random.h"
+#include "../CPPutilibs/RangeRand.h"
+#include "../CPPutilibs/RandSelect.h"
+#include "../CPPutilibs/Timer.h"
 
 
 
-template <typename T_DIST>
+template <typename T_DIST = int>
 class CPMP
 {
 public:
