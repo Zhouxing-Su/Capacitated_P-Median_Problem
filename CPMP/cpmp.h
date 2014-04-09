@@ -90,13 +90,15 @@ template <typename T_DIST = int>
 class CPMP
 {
 public:
+    static const int INVALID_INDEX = -1;
+    static const T_DIST MAX_DIST_DELTA = 100000;
+
     const unsigned medianNum;
 
     typedef int Unit;    // unit of the demand and capacity
     typedef std::vector<Unit> DemandList;
     typedef std::vector<Unit> CapacityList;
 
-    static const int INVALID_INDEX = -1;
     typedef std::vector<int> MedianList;
     typedef std::vector<int> AssignList;
     typedef std::vector< std::vector<int> > AssignMat;
@@ -104,6 +106,21 @@ public:
     {
         int med;    // the median serving this customer(the line number of the assignMat)
         int seq;    // the row number of the assignMat
+    };
+
+    struct Move
+    {
+        Move() : param1( INVALID_INDEX ), param2( INVALID_INDEX ), distDelta( MAX_DIST_DELTA ) {}
+        Move( int p1, int p2, T_DIST delta ) : param1( p1 ), param2( p2 ), distDelta( delta ) {}
+
+        bool isImproved()
+        {
+            return (distDelta < 0);
+        }
+
+        int param1;
+        int param2;
+        T_DIST distDelta;
     };
 
     struct Solution
@@ -115,6 +132,7 @@ public:
         {
         }
 
+        // judging by the vector medianIndex
         bool isMedian( int vertex )
         {
             return (medianIndex[vertex] != INVALID_INDEX);
@@ -209,6 +227,8 @@ public:
     ~CPMP();
 
     void solve();
+    void solve_ShiftSwap();
+    void solve_RandomInit();
     bool check() const;
 
     void printResult( std::ostream &os ) const;
@@ -221,10 +241,14 @@ private:
     void genFeasibleInitSolutionByRestarting();
     void genFeasibleInitSolutionByRepairing();  // not finished
 
+    // end a local search when there is no valid move or a certain number of no improvement move occur
     void localSearchOnReassignCustomerNeighborhood();
-    bool exploreShiftCustomerNeighborhood();
-    bool exploreSwapCustomerNeighborhood();
+    Move exploreShiftCustomerNeighborhood();
+    Move exploreSwapCustomerNeighborhood();
 
+    void perturbCustomerAssignment();
+
+    //curSln.shiftCustomer( *this, customer, newMedian, minDelta );
     Solution curSln;
 
     // solution output and statistic data
@@ -266,7 +290,7 @@ template <typename T_DIST>
 void CPMP<T_DIST>::solve()
 {
     std::ostringstream ss;
-    ss << '[' << typeid(T_DIST).name() << ']' << "ShiftCustomerNeighborhood";
+    ss << '[' << typeid(T_DIST).name() << ']' << "ShiftSwapPerturb";
     solvingAlgorithm = ss.str();
 
     genInitSolution();
@@ -274,12 +298,37 @@ void CPMP<T_DIST>::solve()
 
     while (iterCount++ < maxIterCount) {
         localSearchOnReassignCustomerNeighborhood();
+        perturbCustomerAssignment();
         // localSearchOnRelocateMedianNeighborhood();
     }
     //std::cout << "[invalidMoveCount]" << invalidMoveCount << " [validMoveCount]" << validMoveCount << endl;
 }
 
+template <typename T_DIST>
+void CPMP<T_DIST>::solve_ShiftSwap()
+{
+    std::ostringstream ss;
+    ss << '[' << typeid(T_DIST).name() << ']' << "ShiftSwap";
+    solvingAlgorithm = ss.str();
 
+    genInitSolution();
+    optima = Output( *this, curSln, 0 );
+
+    while (iterCount++ < maxIterCount) {
+        localSearchOnReassignCustomerNeighborhood();
+    }
+}
+
+template <typename T_DIST>
+void CPMP<T_DIST>::solve_RandomInit()
+{
+    std::ostringstream ss;
+    ss << '[' << typeid(T_DIST).name() << ']' << "RandomInit";
+    solvingAlgorithm = ss.str();
+
+    genInitSolution();
+    optima = Output( *this, curSln, 0 );
+}
 
 
 
@@ -287,26 +336,38 @@ void CPMP<T_DIST>::solve()
 template <typename T_DIST>
 void CPMP<T_DIST>::localSearchOnReassignCustomerNeighborhood()
 {
-    bool isImproved = false;
-    while (true) {
-        isImproved = exploreShiftCustomerNeighborhood();
-        if (!isImproved) {
-            isImproved = exploreSwapCustomerNeighborhood();
-            if (!isImproved) {  // local optima of the two neighborhoods found
+    int noImproveCountDown = 10;
+
+    while (noImproveCountDown) {
+        Move shift, swap;
+        shift = exploreShiftCustomerNeighborhood();
+        if (!shift.isImproved()) {
+            swap = exploreSwapCustomerNeighborhood();
+            if (!swap.isImproved()) {  // local optima of the two neighborhoods found
+                noImproveCountDown--;
+                // record the local optima if it is better
                 if (curSln.totalDist < optima.totalDist) {
                     optima = Output( *this, curSln, iterCount );
                 }
-                return;
             }
+        }
+
+        // execute the move by the better neighborhood
+        if (shift.distDelta < swap.distDelta) {
+            curSln.shiftCustomer( *this, shift.param1, shift.param2, shift.distDelta );
+        } else if (swap.distDelta == MAX_DIST_DELTA) {  // shift >= swap == MAX_DIST_DELTA
+            return;   // no valid move
+        } else {
+            curSln.swapCustomer( *this, swap.param1, swap.param2, swap.distDelta );
         }
     }
 }
 
 template <typename T_DIST>
-bool CPMP<T_DIST>::exploreShiftCustomerNeighborhood()
+typename CPMP<T_DIST>::Move CPMP<T_DIST>::exploreShiftCustomerNeighborhood()
 {
     T_DIST delta;
-    T_DIST minDelta = 0;
+    T_DIST minDelta( MAX_DIST_DELTA );
     int customer = INVALID_INDEX;
     int newMedian = INVALID_INDEX;
 
@@ -337,18 +398,13 @@ bool CPMP<T_DIST>::exploreShiftCustomerNeighborhood()
         }
     }
 
-    if (customer == INVALID_INDEX) {
-        return false;
-    } else {
-        curSln.shiftCustomer( *this, customer, newMedian, minDelta );
-        return true;
-    }
+    return Move( customer, newMedian, minDelta );
 }
 
 template <typename T_DIST>
-bool CPMP<T_DIST>::exploreSwapCustomerNeighborhood()
+typename CPMP<T_DIST>::Move CPMP<T_DIST>::exploreSwapCustomerNeighborhood()
 {
-    T_DIST minDelta = 0;
+    T_DIST minDelta( MAX_DIST_DELTA );
     int c1 = INVALID_INDEX;
     int c2 = INVALID_INDEX;
 
@@ -384,12 +440,7 @@ bool CPMP<T_DIST>::exploreSwapCustomerNeighborhood()
         }
     }
 
-    if ((c1 == INVALID_INDEX) || (c2 == INVALID_INDEX)) {
-        return false;
-    } else {
-        curSln.swapCustomer( *this, c1, c2, minDelta );
-        return true;
-    }
+    return Move( c1, c2, minDelta );
 }
 
 
