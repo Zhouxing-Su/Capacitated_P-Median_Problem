@@ -26,5 +26,11 @@
     <ClInclude Include="DisplayNodeDistribution.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="..\CPPutilibs\Graph.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\Instances\log.csv" />
   </ItemGroup>
 </Project>

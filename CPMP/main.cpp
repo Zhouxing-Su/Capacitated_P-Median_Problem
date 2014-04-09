@@ -8,7 +8,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
     typedef int DistType;
 
     ostringstream fname;
-    fname << "pmedcap1(" << instanceNum << ").txt";
+    fname << "../Instances/pmedcap1(" << instanceNum << ").txt";
     ifstream ifs( fname.str() );
 
     unsigned problemNum, optima;
@@ -59,7 +59,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 
 int main()
 {
-    ofstream ofs( "log.csv", ios::app );
+    ofstream ofs( "../Instances/log.csv", ios::app );
     // CPMP<double>::initResultSheet( ofs ); // call if log.csv is not exist
 
     solve_pmedcap1( ofs, 1 );

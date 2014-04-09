@@ -1,3 +1,10 @@
+/**
+*   usage : display node distribution and assignment for CPMP.
+*           this program can be only applied to instance with geometrical graph.
+*
+*   note :  1.  
+*/
+
 #ifndef DISPLAY_NODE_DISTRIBUTION_H
 
 #include <opencv2/core/core.hpp>
@@ -6,6 +13,8 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <cstdio>
+#include <cstring>
 
 #include "../CPPutilibs/Graph.h"
 

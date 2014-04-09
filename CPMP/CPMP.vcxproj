@@ -143,7 +143,6 @@
     <ClCompile Include="..\CPPutilibs\Random.cpp" />
     <ClCompile Include="..\CPPutilibs\RandSelect.cpp" />
     <ClCompile Include="..\CPPutilibs\RangeRand.cpp" />
-    <ClCompile Include="..\CPPutilibs\Tester.cpp" />
     <ClCompile Include="..\CPPutilibs\Timer.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
@@ -153,14 +152,12 @@
     <ClInclude Include="..\CPPutilibs\Random.h" />
     <ClInclude Include="..\CPPutilibs\RandSelect.h" />
     <ClInclude Include="..\CPPutilibs\RangeRand.h" />
-    <ClInclude Include="..\CPPutilibs\Tester.h" />
     <ClInclude Include="..\CPPutilibs\Timer.h" />
     <ClInclude Include="cpmp.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\CPPutilibs\LICENSE" />
     <None Include="..\CPPutilibs\README" />
-    <None Include="log.csv" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

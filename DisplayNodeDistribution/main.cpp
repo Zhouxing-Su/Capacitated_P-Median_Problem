@@ -7,16 +7,16 @@ int main( void )
 {
     const int MAX_STR_LEN = 256;
 
-    ifstream logFile( "../CPMP/log.csv" );
+    ifstream logFile( "../Instances/log.csv" );
 
     char buf[MAX_STR_LEN];
     char date[MAX_STR_LEN], instance[MAX_STR_LEN], algorithm[MAX_STR_LEN],
         totalIter[MAX_STR_LEN], randSeed[MAX_STR_LEN], duration[MAX_STR_LEN],
         iterCount[MAX_STR_LEN], totalDist[MAX_STR_LEN];
 
-    logFile.getline( buf, MAX_STR_LEN, '\n' );  // read sheet head
+    logFile.getline( buf, MAX_STR_LEN, '\n' );  // read sheet header
 
-    while (!logFile.eof()) {
+    for (int testCase = 1; true; testCase++) {
         // read calculation infomation
         logFile.getline( date, MAX_STR_LEN, ',' );
         logFile.getline( instance, MAX_STR_LEN, ',' );
@@ -26,6 +26,10 @@ int main( void )
         logFile.getline( duration, MAX_STR_LEN, ',' );
         logFile.getline( iterCount, MAX_STR_LEN, ',' );
         logFile.getline( totalDist, MAX_STR_LEN, ',' );
+
+        if (logFile.eof()) {
+            break;
+        }
 
         // read instance to get the median number, node number and coordinate of nodes
         ifstream instFile( instance + 1 );    // skip a space
@@ -42,7 +46,7 @@ int main( void )
         instFile >> problemNum >> optima;
         instFile >> vertexNum >> medianNum >> medianCap;
 
-        while (vertexNum--) {
+        for (int i = 0; i < vertexNum; i++) {
             instFile >> nodeSeqNum >> x >> y >> demand;
             pl.push_back( GeometricalGraph::Point( x, y ) );
         }
@@ -64,19 +68,35 @@ int main( void )
             assignment.push_back( node );
         }
 
-        // Create a white background image
         // calculate the apropriate width and height, then regularize the coordinates
+        GeometricalGraph gg( pl );
+        const double GRAPH_AMP = 4;
+        gg.stretch( GRAPH_AMP );
+        const GeometricalGraph::Coord MARGIN_LEN = 50;
+        gg.shift( GeometricalGraph::Point( MARGIN_LEN, MARGIN_LEN ) );
+        GeometricalGraph::Rectangle minCoverRect( gg.getMinCoverRect() );
 
+        // Create a white background image with margin
+        int width = minCoverRect.right + MARGIN_LEN;
+        int height = minCoverRect.top + MARGIN_LEN;
+        Mat distributionImg( width, height, CV_8UC3, RGBcolor::WHITE );
 
-        int row, col;
-        Mat distributionImage( row, col, CV_8UC3, RGBcolor::WHITE );
+        // draw medians as circles
+        //for (int i = 0; i < gg.vertexNum; i++) {
+        //    circle(distributionImg, )
+        //}
 
-        //distributionImage.at<Vec3b>( row, col ) = Vec3b( 0, 255, 0 );
-        //line( distributionImage, Point( row, col ), Point( row, col ), RGBcolor::BLACK );
-        //waitKey( 1 );
-        //imshow( date, distributionImage );
+        // draw assignments as lines
+        for (int i = 0; i < gg.vertexNum; i++) {
+            Point customer( gg.point( i ).x, gg.point( i ).y );
+            Point median( gg.point( assignment[i] ).x, gg.point( assignment[i] ).y );
+            line( distributionImg, customer, median, RGBcolor::BLACK );
+        }
 
-        instFile.close();
+        imshow( date, distributionImg );
+        sprintf( buf, "../Instances/results/%d.png", testCase );
+        imwrite( buf, distributionImg );
+        waitKey();
     }
 
     logFile.close();
