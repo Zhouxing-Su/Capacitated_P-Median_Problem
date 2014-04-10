@@ -60,7 +60,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 int main()
 {
     ofstream ofs( "../Instances/log.csv", ios::app );
-    // CPMP<double>::initResultSheet( ofs ); // call if log.csv is not exist
+    // CPMP<int>::initResultSheet( ofs ); // call if log.csv is not exist
 
     solve_pmedcap1( ofs, 1 );
 
