@@ -11,8 +11,8 @@ int main( void )
 
     char buf[MAX_STR_LEN];
     char date[MAX_STR_LEN], instance[MAX_STR_LEN], algorithm[MAX_STR_LEN],
-        totalIter[MAX_STR_LEN], randSeed[MAX_STR_LEN], duration[MAX_STR_LEN],
-        iterCount[MAX_STR_LEN], totalDist[MAX_STR_LEN];
+        maxIterCount[MAX_STR_LEN], maxNoImproveCount[MAX_STR_LEN], randSeed[MAX_STR_LEN],
+        duration[MAX_STR_LEN], iterCount[MAX_STR_LEN], moveCount[MAX_STR_LEN], totalDist[MAX_STR_LEN];
 
     logFile.getline( buf, MAX_STR_LEN, '\n' );  // read sheet header
 
@@ -21,10 +21,12 @@ int main( void )
         logFile.getline( date, MAX_STR_LEN, ',' );
         logFile.getline( instance, MAX_STR_LEN, ',' );
         logFile.getline( algorithm, MAX_STR_LEN, ',' );
-        logFile.getline( totalIter, MAX_STR_LEN, ',' );
+        logFile.getline( maxIterCount, MAX_STR_LEN, ',' );
+        logFile.getline( maxNoImproveCount, MAX_STR_LEN, ',' );
         logFile.getline( randSeed, MAX_STR_LEN, ',' );
         logFile.getline( duration, MAX_STR_LEN, ',' );
         logFile.getline( iterCount, MAX_STR_LEN, ',' );
+        logFile.getline( moveCount, MAX_STR_LEN, ',' );
         logFile.getline( totalDist, MAX_STR_LEN, ',' );
 
         if (logFile.eof()) {

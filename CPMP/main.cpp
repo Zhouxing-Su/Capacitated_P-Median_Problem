@@ -2,10 +2,10 @@
 
 using namespace std;
 
+typedef int DistType;
 
 int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 {
-    typedef int DistType;
 
     ostringstream fname;
     fname << "../Instances/pmedcap1(" << instanceNum << ").txt";
@@ -41,11 +41,13 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 
     // for each instance, run some times for judging average performance
     const int runTime = 2;
-    const int maxIterCountBase = 1000;
+    const int maxIterCountBase = 200;
+    const int tabuTenureBase = uug.vertexNum * medianNum / 16;
+    const int maxNoImproveCount = tabuTenureBase * 64;
     for (int i = 1; i <= runTime; i++) {
         {
-            CPMP<DistType> cpmp( uug, dl, medianNum, medianCap, i * maxIterCountBase );
-            cpmp.solve();
+            CPMP<DistType> cpmp( uug, dl, medianNum, medianCap );
+            cpmp.solve( i * maxIterCountBase, maxNoImproveCount, tabuTenureBase );
             cpmp.printResult( cout );
             if (!cpmp.check()) {
                 csvFile << "[LogicError] ";
@@ -60,7 +62,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 int main()
 {
     ofstream ofs( "../Instances/log.csv", ios::app );
-    // CPMP<int>::initResultSheet( ofs ); // call if log.csv is not exist
+    //CPMP<DistType>::initResultSheet( ofs ); // call if log.csv is not exist
 
     solve_pmedcap1( ofs, 1 );
 
