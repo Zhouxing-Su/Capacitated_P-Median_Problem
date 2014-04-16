@@ -40,14 +40,14 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
     uug.getDistSeqTable();
 
     // for each instance, run some times for judging average performance
-    const int runTime = 2;
+    const int runTime = 10;
     const int maxIterCountBase = 200;
-    const int tabuTenureBase = uug.vertexNum * medianNum / 16;
-    const int maxNoImproveCount = tabuTenureBase * 64;
+    const int tabuTenureBase = uug.vertexNum * medianNum / 8;
+    const int maxNoImproveCount = tabuTenureBase * 32;
     for (int i = 1; i <= runTime; i++) {
         {
             CPMP<DistType> cpmp( uug, dl, medianNum, medianCap );
-            cpmp.solve( i * maxIterCountBase, maxNoImproveCount, tabuTenureBase );
+            cpmp.solve( maxIterCountBase, maxNoImproveCount, tabuTenureBase );
             cpmp.printResult( cout );
             if (!cpmp.check()) {
                 csvFile << "[LogicError] ";
