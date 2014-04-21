@@ -149,6 +149,7 @@
   <ItemGroup>
     <ClInclude Include="..\CPPutilibs\Double.h" />
     <ClInclude Include="..\CPPutilibs\Graph.h" />
+    <ClInclude Include="..\CPPutilibs\Log.h" />
     <ClInclude Include="..\CPPutilibs\Random.h" />
     <ClInclude Include="..\CPPutilibs\RandSelect.h" />
     <ClInclude Include="..\CPPutilibs\RangeRand.h" />
@@ -156,7 +157,6 @@
     <ClInclude Include="cpmp.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\CPPutilibs\LICENSE" />
     <None Include="..\CPPutilibs\README" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

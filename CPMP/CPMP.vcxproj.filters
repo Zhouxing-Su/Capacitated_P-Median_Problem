@@ -56,9 +56,11 @@
     <ClInclude Include="..\CPPutilibs\Random.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\CPPutilibs\Log.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\CPPutilibs\README" />
-    <None Include="..\CPPutilibs\LICENSE" />
   </ItemGroup>
 </Project>

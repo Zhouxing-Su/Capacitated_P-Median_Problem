@@ -16,7 +16,7 @@ int main( void )
 
     logFile.getline( buf, MAX_STR_LEN, '\n' );  // read sheet header
 
-    for (int testCase = 1; true; testCase++) {
+    for (int logLine = 2; true; logLine++) {
         // read calculation infomation
         logFile.getline( date, MAX_STR_LEN, ',' );
         logFile.getline( instance, MAX_STR_LEN, ',' );
@@ -98,7 +98,7 @@ int main( void )
         }
 
         // imshow( date, distributionImg );
-        sprintf( buf, "../Instances/results/%d.png", testCase );
+        sprintf( buf, "../Instances/results/%d.png", logLine );
         imwrite( buf, distributionImg );
         waitKey();
     }
