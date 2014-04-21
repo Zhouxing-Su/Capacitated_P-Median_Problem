@@ -703,6 +703,8 @@ void CPMP<T_DIST>::relocateSingleMedianWithTotallyReassign()
             isFeasible = true;
         }
     }
+
+    reassignTabu = ReassignTabu( graph.vertexAllocNum, std::vector<int>( graph.vertexAllocNum, 0 ) );
 }
 
 template <typename T_DIST>

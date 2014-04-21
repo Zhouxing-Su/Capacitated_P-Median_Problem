@@ -41,8 +41,8 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 
     // for each instance, run some times for judging average performance
     const int runTime = 10;
-    const int maxIterCountBase = 200;
-    const int tabuTenureBase = uug.vertexNum * medianNum / 8;
+    const int maxIterCountBase = 800;
+    const int tabuTenureBase = uug.vertexNum * medianNum / 4;
     const int maxNoImproveCount = tabuTenureBase * 32;
     for (int i = 1; i <= runTime; i++) {
         {
