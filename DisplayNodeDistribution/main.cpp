@@ -84,7 +84,7 @@ int main( void )
         Mat distributionImg( width, height, CV_8UC3, RGBcolor::WHITE );
 
         // draw assignments as lines and customers
-        for (int i = 0; i < gg.vertexNum; i++) {
+        for (unsigned i = 0; i < gg.vertexNum; i++) {
             Point customer( gg.point( i ).x, gg.point( i ).y );
             Point median( gg.point( assignment[i] ).x, gg.point( assignment[i] ).y );
             circle( distributionImg, customer, 2, RGBcolor::BLACK, 1, CV_AA );
@@ -92,7 +92,7 @@ int main( void )
         }
 
         // draw medians as circles
-        for (int i = 0; i < medianNum; i++) {
+        for (unsigned i = 0; i < medianNum; i++) {
             Point median( gg.point( medians[i] ).x, gg.point( medians[i] ).y );
             circle( distributionImg, median, 4, RGBcolor::RED, 1, CV_AA );
         }

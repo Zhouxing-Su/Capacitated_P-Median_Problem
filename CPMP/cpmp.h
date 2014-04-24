@@ -8,10 +8,12 @@
 *       MAX_ITER_COUNT @ solve()
 *       MAX_NO_IMPROVE_COUNT @ solve()
 *       TABU_TENURE_BASE @ solve()
+*       DEMAND_DISTRIBUTION_DAMPING @ selectOpenedMedian()
 *
 *   Problems:
 *       1. add seed in log file to make it possible to reproduce the calculation.
 *       2. relocateSingleMedian() can be only applied to instances with all medians having same capacity.
+*       3. invoke some math function in standard library which may not compatible with T_DIST type.
 *
 **/
 
@@ -141,7 +143,7 @@ public:
     CPMP( UndirectedGraph<T_DIST> &ug, const DemandList &demand, unsigned medianNum, unsigned medianCap );
     ~CPMP();
 
-    void solve( int maxIterCount, int maxNoImproveCount, int tabuTenureBase );
+    void solve( int maxIterCount, int maxNoImproveCount, int tabuTenureBase, T_DIST demandDistributionDamping );
     void solve_ShiftSwapTabu( int maxIterCount, int maxNoImproveCount, int tabuTenureBase );
     void solve_ShiftSwap();
     void solve_RandomInit();
@@ -259,8 +261,10 @@ private:
     void relocateSingleMedian();
     void relocateSingleMedianWithTotallyReassign();
     void relocateSingleMedianWithMinimalReassign();
-    int selectClosedMedian();   // return the median to be closed
-    int selectOpenedMedian();   // return the median to be opened
+    // return the median to be closed according to optimaOnCurrentMedianDistribution
+    int selectClosedMedian();
+    // return the median to be opened according to curSln with a median closed
+    int selectOpenedMedian();
 
     void perturbCustomerAssignment();
 
@@ -278,11 +282,14 @@ private:
     int invalidMoveCount;
     int optimaReachCount;
 
+    int iterCount;  // iteration count of local search or tabu search
+    int moveCount;  // total move count of local search or tabu search
+
+    // arguments of algorithm
     int MAX_ITER_COUNT;
     int MAX_NO_IMPROVE_COUNT;
     int TABU_TENURE_BASE;
-    int iterCount;  // iteration count of local search or tabu search
-    int moveCount;  // total move count of local search or tabu search
+    int DEMAND_DISTRIBUTION_DAMPING;
 
     Output optima;
     Timer timer;
@@ -329,14 +336,17 @@ iterCount( iterationCount ), median( s.medianList ), assign( cpmp.graph.vertexNu
 }
 
 template <typename T_DIST>
-void CPMP<T_DIST>::solve( int maxIterCount, int maxNoImproveCount, int tabuTenureBase )
+void CPMP<T_DIST>::solve( int maxIterCount, int maxNoImproveCount, int tabuTenureBase, T_DIST demandDistributionDamping )
 {
     MAX_ITER_COUNT = maxIterCount;
     MAX_NO_IMPROVE_COUNT = maxNoImproveCount;
     TABU_TENURE_BASE = tabuTenureBase;
+    DEMAND_DISTRIBUTION_DAMPING = demandDistributionDamping;
 
     std::ostringstream ss;
-    ss << '[' << typeid(T_DIST).name() << ']' << "ShiftSwapTabuRelocate(B=" << TABU_TENURE_BASE << ')';
+    ss << '[' << typeid(T_DIST).name() << ']' 
+        << "ShiftSwapTabuRelocate(B=" << TABU_TENURE_BASE 
+        << "|D=" << DEMAND_DISTRIBUTION_DAMPING  << ')';
     solvingAlgorithm = ss.str();
 
     genInitSolution();
@@ -644,14 +654,8 @@ void CPMP<T_DIST>::relocateSingleMedianWithTotallyReassign()
     int closedMedian = selectClosedMedian();
     int closedMedianIndex = optimaOnCurrentMedianDistribution.medianIndex[closedMedian];
 
-    RangeRand orr( graph.minVertexIndex, graph.maxVertexIndex );
-
     while (true) {    // loop until a feasible solution is generated
-        // select a median to be opened
-        int openedMedian;
-        do {
-            openedMedian = orr();
-        } while (curSln.isMedian( openedMedian ));
+        int openedMedian = selectOpenedMedian();
 
         // replace the closed median with the opened median in median list
         curSln.medianList[closedMedianIndex] = openedMedian;
@@ -796,7 +800,55 @@ int CPMP<T_DIST>::selectClosedMedian()
 template <typename T_DIST>
 int CPMP<T_DIST>::selectOpenedMedian()
 {
+    RandSelect rs;
 
+    int maxEvalCustomer = graph.minVertexIndex;
+    T_DIST maxEval = 0;
+    // init maxEval by the first customer
+    for (int i = graph.minVertexIndex; i < graph.maxVertexIndex; i++) {
+        if (!curSln.isMedian( i )) {
+            for (int j = graph.minVertexIndex; j < graph.maxVertexIndex; j++) {
+                T_DIST d = exp( -(graph.distance( i, j ) / DEMAND_DISTRIBUTION_DAMPING) );
+                if (curSln.isMedian( j )) {
+                    maxEval -= capList[j] * d;
+                }
+                maxEval += demandList[j] * d;
+            }
+            break;
+        }
+    }
+
+    // evaluate each customer whether to open a median near it
+    for (int i = graph.minVertexIndex; i < graph.maxVertexIndex; i++) {
+        if (!curSln.isMedian( i )) {
+            T_DIST eval = 0;
+            for (int j = graph.minVertexIndex; j < graph.maxVertexIndex; j++) {
+                T_DIST d = exp( -(graph.distance( i, j ) / DEMAND_DISTRIBUTION_DAMPING) );
+                if (curSln.isMedian( j )) {
+                    eval -= capList[j] * d;
+                }
+                eval += demandList[j] * d;
+            }
+
+            if ((eval == maxEval) && rs.isSelected()) {
+                maxEvalCustomer = i;
+                maxEval = eval;
+            } else if (eval > maxEval) {
+                maxEvalCustomer = i;
+                maxEval = eval;
+                rs.reset( 2 );
+            }
+        }
+    }
+
+    // select the median to be opened randomly near the most-lack-of-service customer
+    int openedMedian;
+    RangeRand rr( 0, 3 );
+    do {
+        openedMedian = graph.nthClosestVertex( maxEvalCustomer, rr() );
+    } while (curSln.isMedian( openedMedian ));
+
+    return openedMedian;
 }
 
 template <typename T_DIST>

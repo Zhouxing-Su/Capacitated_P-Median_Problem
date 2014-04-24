@@ -41,13 +41,14 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 
     // for each instance, run some times for judging average performance
     const int runTime = 10;
-    const int maxIterCountBase = 200;
+    const int maxIterCountBase = 800;
     const int tabuTenureBase = uug.vertexNum * medianNum / 8;
     const int maxNoImproveCount = tabuTenureBase * 32;
     for (int i = 1; i <= runTime; i++) {
         {
             CPMP<DistType> cpmp( uug, dl, medianNum, medianCap );
-            cpmp.solve( maxIterCountBase, maxNoImproveCount, tabuTenureBase );
+            cpmp.solve( maxIterCountBase, maxNoImproveCount, tabuTenureBase,
+                (uug.DistMultiplication * (gg.getMinCoverRect().right - gg.getMinCoverRect().left) / 4) );
             cpmp.printResult( cout );
             if (!cpmp.check()) {
                 csvFile << "[LogicError] ";
@@ -64,7 +65,7 @@ int main()
     ofstream ofs( "../Instances/log.csv", ios::app );
     //CPMP<DistType>::initResultSheet( ofs ); // call if log.csv is not exist
 
-    solve_pmedcap1( ofs, 1 );
+    solve_pmedcap1( ofs, 2 );
 
     ofs.close();
     return 0;
