@@ -36,7 +36,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
     GeometricalGraph gg( pl );
     //UndirectedGraph<double> dug( gg );
     //dug.getDistSeqTable();
-    UndirectedGraph<DistType> uug( gg );
+    UndirectedGraph<DistType, 1> uug( gg );
     uug.getDistSeqTable();
 
     // for each instance, run some times for judging average performance
@@ -46,7 +46,7 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
     const int maxNoImproveCount = tabuTenureBase * 32;
     for (int i = 1; i <= runTime; i++) {
         {
-            CPMP<DistType> cpmp( uug, dl, medianNum, medianCap );
+            CPMP<DistType, 1> cpmp( uug, dl, medianNum, medianCap );
             cpmp.solve( maxIterCountBase, maxNoImproveCount, tabuTenureBase,
                 (uug.DistMultiplication * (gg.getMinCoverRect().right - gg.getMinCoverRect().left) / 4) );
             cpmp.printResult( cout );

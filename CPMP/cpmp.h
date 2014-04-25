@@ -96,7 +96,7 @@
 
 
 
-template <typename T_DIST = int>
+template <typename T_DIST = int, int DIST_MULTIPLICATION = 1000>
 class CPMP
 {
 public:
@@ -135,12 +135,12 @@ public:
     };
 
     // known conditions
-    const UndirectedGraph<T_DIST> graph;
+    const UndirectedGraph<T_DIST, DIST_MULTIPLICATION> graph;
     const DemandList demandList;
     const CapacityList capList;
 
     // the map from indices to vertex of demand should be the same as the ug.
-    CPMP( UndirectedGraph<T_DIST> &ug, const DemandList &demand, unsigned medianNum, unsigned medianCap );
+    CPMP( UndirectedGraph<T_DIST, DIST_MULTIPLICATION> &ug, const DemandList &demand, unsigned medianNum, unsigned medianCap );
     ~CPMP();
 
     void solve( int maxIterCount, int maxNoImproveCount, int tabuTenureBase, T_DIST demandDistributionDamping );
@@ -308,8 +308,8 @@ private:
 
 
 
-template <typename T_DIST>
-CPMP<T_DIST>::CPMP( UndirectedGraph<T_DIST> &ug, const DemandList &dl, unsigned mn, unsigned mc )
+template <typename T_DIST, int DIST_MULTIPLICATION>
+CPMP<T_DIST, DIST_MULTIPLICATION>::CPMP( UndirectedGraph<T_DIST, DIST_MULTIPLICATION> &ug, const DemandList &dl, unsigned mn, unsigned mc )
 : graph( ug ), demandList( dl ), medianNum( mn ), capList( ug.vertexAllocNum, mc ), curSln( *this ),
 reassignTabu( ug.vertexAllocNum, std::vector<int>( ug.vertexAllocNum, 0 ) ), iterCount( 0 ), moveCount( 0 ),
 MAX_ITER_COUNT( 1 ), MAX_NO_IMPROVE_COUNT( 1 ), validMoveCount( 0 ), invalidMoveCount( 0 ), medianDistributionChanged( false )
@@ -317,13 +317,13 @@ MAX_ITER_COUNT( 1 ), MAX_NO_IMPROVE_COUNT( 1 ), validMoveCount( 0 ), invalidMove
     Random::setSeed();
 }
 
-template <typename T_DIST>
-CPMP<T_DIST>::~CPMP()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+CPMP<T_DIST, DIST_MULTIPLICATION>::~CPMP()
 {
 }
 
-template <typename T_DIST>
-CPMP<T_DIST>::Output::Output( CPMP &cpmp, const Solution& s, int iterationCount, int movementCount ) : totalDist( s.totalDist ),
+template <typename T_DIST, int DIST_MULTIPLICATION>
+CPMP<T_DIST, DIST_MULTIPLICATION>::Output::Output( CPMP &cpmp, const Solution& s, int iterationCount, int movementCount ) : totalDist( s.totalDist ),
 iterCount( iterationCount ), median( s.medianList ), assign( cpmp.graph.vertexNum ), moveCount( movementCount )
 {
     cpmp.timer.record();
@@ -335,8 +335,8 @@ iterCount( iterationCount ), median( s.medianList ), assign( cpmp.graph.vertexNu
     }
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::solve( int maxIterCount, int maxNoImproveCount, int tabuTenureBase, T_DIST demandDistributionDamping )
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::solve( int maxIterCount, int maxNoImproveCount, int tabuTenureBase, T_DIST demandDistributionDamping )
 {
     MAX_ITER_COUNT = maxIterCount;
     MAX_NO_IMPROVE_COUNT = maxNoImproveCount;
@@ -344,9 +344,9 @@ void CPMP<T_DIST>::solve( int maxIterCount, int maxNoImproveCount, int tabuTenur
     DEMAND_DISTRIBUTION_DAMPING = demandDistributionDamping;
 
     std::ostringstream ss;
-    ss << '[' << typeid(T_DIST).name() << ']' 
-        << "ShiftSwapTabuRelocate(B=" << TABU_TENURE_BASE 
-        << "|D=" << DEMAND_DISTRIBUTION_DAMPING  << ')';
+    ss << '[' << typeid(T_DIST).name() << ']'
+        << "ShiftSwapTabuRelocate(B=" << TABU_TENURE_BASE
+        << "|D=" << DEMAND_DISTRIBUTION_DAMPING << ')';
     solvingAlgorithm = ss.str();
 
     genInitSolution();
@@ -366,8 +366,8 @@ void CPMP<T_DIST>::solve( int maxIterCount, int maxNoImproveCount, int tabuTenur
     Log<int>::writeln( optimaReachCount );
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::solve_ShiftSwapTabu( int maxIterCount, int maxNoImproveCount, int tabuTenureBase )
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwapTabu( int maxIterCount, int maxNoImproveCount, int tabuTenureBase )
 {
     MAX_ITER_COUNT = maxIterCount;
     MAX_NO_IMPROVE_COUNT = maxNoImproveCount;
@@ -384,8 +384,8 @@ void CPMP<T_DIST>::solve_ShiftSwapTabu( int maxIterCount, int maxNoImproveCount,
     }
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::solve_ShiftSwap()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwap()
 {
     std::ostringstream ss;
     ss << '[' << typeid(T_DIST).name() << ']' << "ShiftSwap";
@@ -397,8 +397,8 @@ void CPMP<T_DIST>::solve_ShiftSwap()
     localSearchOnReassignCustomerNeighborhood();
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::solve_RandomInit()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_RandomInit()
 {
     std::ostringstream ss;
     ss << '[' << typeid(T_DIST).name() << ']' << "RandomInit";
@@ -410,8 +410,8 @@ void CPMP<T_DIST>::solve_RandomInit()
 
 
 
-template <typename T_DIST>
-void CPMP<T_DIST>::tabuSearchOnReassignCustomerNeighborhood( int noImproveCountDown )
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::tabuSearchOnReassignCustomerNeighborhood( int noImproveCountDown )
 {
     while (noImproveCountDown) {
         Move shift, swap;
@@ -450,8 +450,8 @@ void CPMP<T_DIST>::tabuSearchOnReassignCustomerNeighborhood( int noImproveCountD
     }
 }
 
-template <typename T_DIST>
-typename CPMP<T_DIST>::Move CPMP<T_DIST>::exploreTabuShiftCustomerNeighborhood()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATION>::exploreTabuShiftCustomerNeighborhood()
 {
     T_DIST delta;
     T_DIST minDelta( MAX_DIST_DELTA );
@@ -490,8 +490,8 @@ typename CPMP<T_DIST>::Move CPMP<T_DIST>::exploreTabuShiftCustomerNeighborhood()
     return Move( customer, newMedian, minDelta );
 }
 
-template <typename T_DIST>
-typename CPMP<T_DIST>::Move CPMP<T_DIST>::exploreTabuSwapCustomerNeighborhood()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATION>::exploreTabuSwapCustomerNeighborhood()
 {
     T_DIST minDelta( MAX_DIST_DELTA );
     int c1 = INVALID_INDEX;
@@ -533,8 +533,8 @@ typename CPMP<T_DIST>::Move CPMP<T_DIST>::exploreTabuSwapCustomerNeighborhood()
     return Move( c1, c2, minDelta );
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::localSearchOnReassignCustomerNeighborhood()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::localSearchOnReassignCustomerNeighborhood()
 {
     while (true) {
         Move shift, swap;
@@ -561,8 +561,8 @@ void CPMP<T_DIST>::localSearchOnReassignCustomerNeighborhood()
     }
 }
 
-template <typename T_DIST>
-typename CPMP<T_DIST>::Move CPMP<T_DIST>::exploreShiftCustomerNeighborhood()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATION>::exploreShiftCustomerNeighborhood()
 {
     T_DIST delta;
     T_DIST minDelta( MAX_DIST_DELTA );
@@ -596,8 +596,8 @@ typename CPMP<T_DIST>::Move CPMP<T_DIST>::exploreShiftCustomerNeighborhood()
     return Move( customer, newMedian, minDelta );
 }
 
-template <typename T_DIST>
-typename CPMP<T_DIST>::Move CPMP<T_DIST>::exploreSwapCustomerNeighborhood()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATION>::exploreSwapCustomerNeighborhood()
 {
     T_DIST minDelta( MAX_DIST_DELTA );
     int c1 = INVALID_INDEX;
@@ -636,8 +636,8 @@ typename CPMP<T_DIST>::Move CPMP<T_DIST>::exploreSwapCustomerNeighborhood()
 }
 
 
-template <typename T_DIST>
-void CPMP<T_DIST>::relocateSingleMedian()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedian()
 {
     relocateSingleMedianWithTotallyReassign();
     //relocateSingleMedianWithMinimalReassign();
@@ -645,8 +645,8 @@ void CPMP<T_DIST>::relocateSingleMedian()
     medianDistributionChanged = true;
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::relocateSingleMedianWithTotallyReassign()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedianWithTotallyReassign()
 {
     bool isFeasible = true;
     int loopCount = 1;
@@ -709,8 +709,8 @@ void CPMP<T_DIST>::relocateSingleMedianWithTotallyReassign()
     }
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::relocateSingleMedianWithMinimalReassign()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedianWithMinimalReassign()
 {
     // select a median to be closed
     RangeRand crr( 0, medianNum - 1 );
@@ -754,8 +754,8 @@ void CPMP<T_DIST>::relocateSingleMedianWithMinimalReassign()
     recoverByReassign();
 }
 
-template <typename T_DIST>
-int CPMP<T_DIST>::selectClosedMedian()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+int CPMP<T_DIST, DIST_MULTIPLICATION>::selectClosedMedian()
 {
     int closedMedian = optimaOnCurrentMedianDistribution.medianList[0];
 
@@ -797,8 +797,8 @@ int CPMP<T_DIST>::selectClosedMedian()
     return closedMedian;
 }
 
-template <typename T_DIST>
-int CPMP<T_DIST>::selectOpenedMedian()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian()
 {
     RandSelect rs;
 
@@ -851,22 +851,22 @@ int CPMP<T_DIST>::selectOpenedMedian()
     return openedMedian;
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::perturbCustomerAssignment()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::perturbCustomerAssignment()
 {
 
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::recoverByReassign()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::recoverByReassign()
 {
 
 }
 
 
 
-template <typename T_DIST>
-void CPMP<T_DIST>::genInitSolution()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::genInitSolution()
 {
     genFeasibleInitSolutionByRestarting();
     // genFeasibleInitSolutionByRepairing();    // not finished
@@ -875,8 +875,8 @@ void CPMP<T_DIST>::genInitSolution()
     optima = Output( *this, curSln, 0, 0 );
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::genFeasibleInitSolutionByRestarting()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::genFeasibleInitSolutionByRestarting()
 {
     RangeRand rr( graph.minVertexIndex, graph.maxVertexIndex );
 
@@ -929,8 +929,8 @@ void CPMP<T_DIST>::genFeasibleInitSolutionByRestarting()
     curSln = sln;
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::genFeasibleInitSolutionByRepairing()
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::genFeasibleInitSolutionByRepairing()
 {
     RangeRand rr( graph.minVertexIndex, graph.maxVertexIndex );
 
@@ -990,8 +990,8 @@ void CPMP<T_DIST>::genFeasibleInitSolutionByRepairing()
 
 
 
-template <typename T_DIST>
-bool CPMP<T_DIST>::check() const
+template <typename T_DIST, int DIST_MULTIPLICATION>
+bool CPMP<T_DIST, DIST_MULTIPLICATION>::check() const
 {
     const double ERROR = 0.01;
     typename TopologicalGraph<T_DIST>::Distance totalDist = 0;
@@ -1029,20 +1029,20 @@ bool CPMP<T_DIST>::check() const
 
 
 
-template <typename T_DIST>
-void CPMP<T_DIST>::printResult( std::ostream &os ) const
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::printResult( std::ostream &os ) const
 {
     os << (graph.isMultiplied() ? (optima.totalDist / static_cast<double>(graph.DistMultiplication)) : optima.totalDist) << std::endl;
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::initResultSheet( std::ofstream &csvFile )
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::initResultSheet( std::ofstream &csvFile )
 {
     csvFile << "Date, Instance, Algorithm, MAX_ITER_COUNT, MAX_NO_IMPROVE_COUNT, RandSeed, Duration, IterCount, MoveCount, TotalDist, Medians, Assignment" << std::endl;
 }
 
-template <typename T_DIST>
-void CPMP<T_DIST>::appendResultToSheet( const std::string &instanceFileName, std::ofstream &csvFile ) const
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::appendResultToSheet( const std::string &instanceFileName, std::ofstream &csvFile ) const
 {
     csvFile << Timer::getLocalTime() << ", "
         << instanceFileName << ", "
