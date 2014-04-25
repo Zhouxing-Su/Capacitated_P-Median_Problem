@@ -7,7 +7,8 @@
 *       DistType @ main.cpp
 *       MAX_ITER_COUNT @ solve()
 *       MAX_NO_IMPROVE_COUNT @ solve()
-*       TABU_TENURE_BASE @ solve()
+*       TABU_TENURE_ASSIGN @ solve()
+*       TABU_TENURE_RELOCATE @ solve()
 *       DEMAND_DISTRIBUTION_DAMPING @ selectOpenedMedian()
 *
 *   Problems:
@@ -143,8 +144,9 @@ public:
     CPMP( UndirectedGraph<T_DIST, DIST_MULTIPLICATION> &ug, const DemandList &demand, unsigned medianNum, unsigned medianCap );
     ~CPMP();
 
-    void solve( int maxIterCount, int maxNoImproveCount, int tabuTenureBase, T_DIST demandDistributionDamping );
-    void solve_ShiftSwapTabu( int maxIterCount, int maxNoImproveCount, int tabuTenureBase );
+    void solve( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, int tabuTenureRelocate, T_DIST demandDistributionDamping );
+    void solve_ShiftSwapTabuRelocate( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, T_DIST demandDistributionDamping );
+    void solve_ShiftSwapTabu( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign );
     void solve_ShiftSwap();
     void solve_RandomInit();
     bool check() const;
@@ -240,13 +242,11 @@ private:
         CapacityList restCap;
     };
 
-    // the lines indicate customers and columns indicate medians
-    typedef std::vector< std::vector<int> > ReassignTabu;
-
 
     void genInitSolution();
     void genFeasibleInitSolutionByRestarting();
     void genFeasibleInitSolutionByRepairing();  // not finished
+    void initDemandDistribution();
 
     // end a local search when there is no valid move or local optima found
     void localSearchOnReassignCustomerNeighborhood();
@@ -265,6 +265,8 @@ private:
     int selectClosedMedian();
     // return the median to be opened according to curSln with a median closed
     int selectOpenedMedian();
+    int selectOpenedMedian_basic();
+    int selectOpenedMedian_tabu();
 
     void perturbCustomerAssignment();
 
@@ -273,9 +275,15 @@ private:
     Solution curSln;
     Solution optimaOnCurrentMedianDistribution;
     bool medianDistributionChanged;
+
+    std::vector<Unit> demandDistribution;
+
+    // the lines indicate customers and columns indicate medians
     // a N*N matrix where N is the vertex number.
     // reassignTabu[c][m] record if the customer c can be assigned to median m
-    ReassignTabu reassignTabu;
+    std::vector< std::vector<int> > reassignTabu;
+    // relocateTabu[c] record if the customer c can be relocated as an median
+    std::vector<int> relocateTabu;
 
     // solution output and statistic data
     int validMoveCount;
@@ -288,7 +296,8 @@ private:
     // arguments of algorithm
     int MAX_ITER_COUNT;
     int MAX_NO_IMPROVE_COUNT;
-    int TABU_TENURE_BASE;
+    int TABU_TENURE_ASSIGN;
+    int TABU_TENURE_RELOCATE;
     int DEMAND_DISTRIBUTION_DAMPING;
 
     Output optima;
@@ -310,9 +319,10 @@ private:
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
 CPMP<T_DIST, DIST_MULTIPLICATION>::CPMP( UndirectedGraph<T_DIST, DIST_MULTIPLICATION> &ug, const DemandList &dl, unsigned mn, unsigned mc )
-: graph( ug ), demandList( dl ), medianNum( mn ), capList( ug.vertexAllocNum, mc ), curSln( *this ),
-reassignTabu( ug.vertexAllocNum, std::vector<int>( ug.vertexAllocNum, 0 ) ), iterCount( 0 ), moveCount( 0 ),
-MAX_ITER_COUNT( 1 ), MAX_NO_IMPROVE_COUNT( 1 ), validMoveCount( 0 ), invalidMoveCount( 0 ), medianDistributionChanged( false )
+: graph( ug ), demandList( dl ), medianNum( mn ), capList( ug.vertexAllocNum, mc ), curSln( *this ), iterCount( 0 ), moveCount( 0 ),
+reassignTabu( ug.vertexAllocNum, std::vector<int>( ug.vertexAllocNum, 0 ) ), relocateTabu( ug.vertexAllocNum, 0 ),
+MAX_ITER_COUNT( 1 ), MAX_NO_IMPROVE_COUNT( 1 ), demandDistribution( ug.vertexAllocNum, 0 ),
+validMoveCount( 0 ), invalidMoveCount( 0 ), medianDistributionChanged( false )
 {
     Random::setSeed();
 }
@@ -336,16 +346,50 @@ iterCount( iterationCount ), median( s.medianList ), assign( cpmp.graph.vertexNu
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::solve( int maxIterCount, int maxNoImproveCount, int tabuTenureBase, T_DIST demandDistributionDamping )
+void CPMP<T_DIST, DIST_MULTIPLICATION>::solve( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, int tabuTenureRelocate, T_DIST demandDistributionDamping )
 {
     MAX_ITER_COUNT = maxIterCount;
     MAX_NO_IMPROVE_COUNT = maxNoImproveCount;
-    TABU_TENURE_BASE = tabuTenureBase;
+    TABU_TENURE_ASSIGN = tabuTenureAssign;
+    TABU_TENURE_RELOCATE = tabuTenureRelocate;
     DEMAND_DISTRIBUTION_DAMPING = demandDistributionDamping;
 
     std::ostringstream ss;
     ss << '[' << typeid(T_DIST).name() << ']'
-        << "ShiftSwapTabuRelocate(B=" << TABU_TENURE_BASE
+        << "ShiftSwapTabuRelocate(Ba=" << TABU_TENURE_ASSIGN
+        << "|Br=" << TABU_TENURE_RELOCATE
+        << "|D=" << DEMAND_DISTRIBUTION_DAMPING << ')';
+    solvingAlgorithm = ss.str();
+
+    initDemandDistribution();
+    genInitSolution();
+
+    RangeRand rr( 1, 4 );
+
+    while (iterCount++ < MAX_ITER_COUNT) {
+        tabuSearchOnReassignCustomerNeighborhood( MAX_NO_IMPROVE_COUNT );
+        if (rr() == 1) {    // relocate a median() with a probability of 1/4
+            relocateSingleMedian();
+        } else {    // perturb customer assignment with a probability of 3/4
+            // perturbCustomerAssignment();
+        }
+    }
+    //std::cout << "[invalidMoveCount] " << invalidMoveCount << " [validMoveCount] " << validMoveCount << std::endl;
+    Log<>::write( "[optimaReachCount] " );
+    Log<int>::writeln( optimaReachCount );
+}
+
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwapTabuRelocate( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, T_DIST demandDistributionDamping )
+{
+    MAX_ITER_COUNT = maxIterCount;
+    MAX_NO_IMPROVE_COUNT = maxNoImproveCount;
+    TABU_TENURE_ASSIGN = tabuTenureAssign;
+    DEMAND_DISTRIBUTION_DAMPING = demandDistributionDamping;
+
+    std::ostringstream ss;
+    ss << '[' << typeid(T_DIST).name() << ']'
+        << "ShiftSwapTabuRelocate(B=" << TABU_TENURE_ASSIGN
         << "|D=" << DEMAND_DISTRIBUTION_DAMPING << ')';
     solvingAlgorithm = ss.str();
 
@@ -367,14 +411,14 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve( int maxIterCount, int maxNoImprov
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwapTabu( int maxIterCount, int maxNoImproveCount, int tabuTenureBase )
+void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwapTabu( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign )
 {
     MAX_ITER_COUNT = maxIterCount;
     MAX_NO_IMPROVE_COUNT = maxNoImproveCount;
-    TABU_TENURE_BASE = tabuTenureBase;
+    TABU_TENURE_ASSIGN = tabuTenureAssign;
 
     std::ostringstream ss;
-    ss << '[' << typeid(T_DIST).name() << ']' << "ShiftSwapTabu(B=" << TABU_TENURE_BASE << ')';
+    ss << '[' << typeid(T_DIST).name() << ']' << "ShiftSwapTabu(B=" << TABU_TENURE_ASSIGN << ')';
     solvingAlgorithm = ss.str();
 
     genInitSolution();
@@ -436,13 +480,13 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::tabuSearchOnReassignCustomerNeighborhood
 
         // execute the move by the better neighborhood
         if (shift.distDelta < swap.distDelta) {
-            reassignTabu[shift.param1][shift.param2] = moveCount + TABU_TENURE_BASE;
+            reassignTabu[shift.param1][shift.param2] = moveCount + TABU_TENURE_ASSIGN;
             curSln.shiftCustomer( *this, shift.param1, shift.param2, shift.distDelta );
         } else if (swap.distDelta == MAX_DIST_DELTA) {  // shift >= swap == MAX_DIST_DELTA
             return;   // no valid move
         } else {
-            reassignTabu[swap.param1][curSln.customerIndex[swap.param1].med] = moveCount + TABU_TENURE_BASE;
-            reassignTabu[swap.param2][curSln.customerIndex[swap.param2].med] = moveCount + TABU_TENURE_BASE;
+            reassignTabu[swap.param1][curSln.customerIndex[swap.param1].med] = moveCount + TABU_TENURE_ASSIGN;
+            reassignTabu[swap.param2][curSln.customerIndex[swap.param2].med] = moveCount + TABU_TENURE_ASSIGN;
             curSln.swapCustomer( *this, swap.param1, swap.param2, swap.distDelta );
         }
 
@@ -794,11 +838,61 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectClosedMedian()
         }
     }
 
+    relocateTabu[closedMedian] = iterCount + TABU_TENURE_RELOCATE;
     return closedMedian;
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
 int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian()
+{
+    //return selectOpenedMedian_tabu();
+    return selectOpenedMedian_basic();
+}
+
+template <typename T_DIST, int DIST_MULTIPLICATION>
+int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_tabu()
+{
+    RandSelect rs;
+
+    int openedMedian = graph.minVertexIndex;
+    T_DIST maxEval;
+    // init maxEval by the first customer
+    for (; openedMedian < graph.maxVertexIndex; openedMedian++) {
+        if (!curSln.isMedian( openedMedian ) && (relocateTabu[openedMedian] < iterCount)) {
+            maxEval = demandDistribution[openedMedian];
+            for (int j = 0; j < medianNum; j++) {
+                int med = curSln.medianList[j];
+                maxEval -= capList[med] * exp( -(graph.distance( openedMedian, med ) / DEMAND_DISTRIBUTION_DAMPING) );
+            }
+            break;
+        }
+    }
+
+    // evaluate each customer whether to open a median near it
+    for (int i = graph.minVertexIndex; i < graph.maxVertexIndex; i++) {
+        if (!curSln.isMedian( i ) && (relocateTabu[openedMedian] < iterCount)) {
+            T_DIST eval = demandDistribution[i];
+            for (int j = 0; j < medianNum; j++) {
+                int med = curSln.medianList[j];
+                eval -= capList[med] * exp( -(graph.distance( i, med ) / DEMAND_DISTRIBUTION_DAMPING) );
+            }
+
+            if ((eval == maxEval) && rs.isSelected()) {
+                openedMedian = i;
+                maxEval = eval;
+            } else if (eval > maxEval) {
+                openedMedian = i;
+                maxEval = eval;
+                rs.reset( 2 );
+            }
+        }
+    }
+
+    return openedMedian;
+}
+
+template <typename T_DIST, int DIST_MULTIPLICATION>
+int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_basic()
 {
     RandSelect rs;
 
@@ -864,6 +958,15 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::recoverByReassign()
 }
 
 
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::initDemandDistribution()
+{
+    for (int i = graph.minVertexIndex; i < graph.maxVertexIndex; i++) {
+        for (int j = graph.minVertexIndex; j < graph.maxVertexIndex; j++) {
+            demandDistribution[i] += demandList[j] * exp( -(graph.distance( i, j ) / DEMAND_DISTRIBUTION_DAMPING) );
+        }
+    }
+}
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
 void CPMP<T_DIST, DIST_MULTIPLICATION>::genInitSolution()
