@@ -102,7 +102,7 @@ class CPMP
 {
 public:
     static const int INVALID_INDEX = -1;
-    static const T_DIST MAX_DIST_DELTA = 100000;
+    static const T_DIST MAX_DIST_DELTA = 1000 * DIST_MULTIPLICATION;
 
     const unsigned medianNum;
 
@@ -146,9 +146,6 @@ public:
 
     void solve( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, int tabuTenureRelocate, T_DIST demandDistributionDamping );
     void solve_ShiftSwapTabuRelocate( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, T_DIST demandDistributionDamping );
-    void solve_ShiftSwapTabu( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign );
-    void solve_ShiftSwap();
-    void solve_RandomInit();
     bool check() const;
 
     void printResult( std::ostream &os ) const;
@@ -172,6 +169,20 @@ private:
         T_DIST distDelta;
     };
 
+    struct RecoverMove : public Move
+    {
+        RecoverMove() {}
+        RecoverMove( int p1, int p2, T_DIST dd, Unit od, Unit mrcd ) : Move( p1, p2, dd ), overflowDelta( od ), maxRestCapDelta( mrcd ) {}
+
+        bool isMoreFeasible()
+        {
+            return (overflowDelta > 0);
+        }
+
+        Unit overflowDelta;
+        Unit maxRestCapDelta;
+    };
+
     struct Solution
     {
         Solution() {}
@@ -184,7 +195,7 @@ private:
         // judging by the vector medianIndex
         bool isMedian( int vertex )
         {
-            return (medianIndex[vertex] != INVALID_INDEX);
+            return ((vertex != INVALID_INDEX) && (medianIndex[vertex] != INVALID_INDEX));
         }
 
         // move customer from oldMedian to newMedian
@@ -232,6 +243,7 @@ private:
         }
 
         T_DIST totalDist;
+        Unit totalOverflow;
 
         MedianList medianList;          // has a fixed length of P
         std::vector<int> medianIndex;   // i == medianList[medianIndex[i]]
@@ -247,19 +259,17 @@ private:
     void genFeasibleInitSolutionByRestarting();
     void genFeasibleInitSolutionByRepairing();  // not finished
     void initDemandDistribution();
-
-    // end a local search when there is no valid move or local optima found
-    void localSearchOnReassignCustomerNeighborhood();
-    Move exploreShiftCustomerNeighborhood();
-    Move exploreSwapCustomerNeighborhood();
+    void initCustomerIndexByDescendDemand();
 
     // end a tabu search when there is no valid move or a certain number of no improvement move occur
     void tabuSearchOnReassignCustomerNeighborhood( int noImproveCountDown );
     Move exploreTabuShiftCustomerNeighborhood();
     Move exploreTabuSwapCustomerNeighborhood();
 
-    void relocateSingleMedian();
-    void relocateSingleMedianWithTotallyReassign();
+    void relocateSingleMedian_basic();
+    void relocateSingleMedian_tabu();
+    void relocateSingleMedianWithTotallyReassign_basic();
+    void relocateSingleMedianWithTotallyReassign_tabu();
     void relocateSingleMedianWithMinimalReassign();
     // return the median to be closed according to optimaOnCurrentMedianDistribution
     int selectClosedMedian();
@@ -277,6 +287,7 @@ private:
     bool medianDistributionChanged;
 
     std::vector<Unit> demandDistribution;
+    std::vector<int> customerIndexByDescendDemand;
 
     // the lines indicate customers and columns indicate medians
     // a N*N matrix where N is the vertex number.
@@ -322,9 +333,11 @@ CPMP<T_DIST, DIST_MULTIPLICATION>::CPMP( UndirectedGraph<T_DIST, DIST_MULTIPLICA
 : graph( ug ), demandList( dl ), medianNum( mn ), capList( ug.vertexAllocNum, mc ), curSln( *this ), iterCount( 0 ), moveCount( 0 ),
 reassignTabu( ug.vertexAllocNum, std::vector<int>( ug.vertexAllocNum, 0 ) ), relocateTabu( ug.vertexAllocNum, 0 ),
 MAX_ITER_COUNT( 1 ), MAX_NO_IMPROVE_COUNT( 1 ), demandDistribution( ug.vertexAllocNum, 0 ),
-validMoveCount( 0 ), invalidMoveCount( 0 ), medianDistributionChanged( false )
+validMoveCount( 0 ), invalidMoveCount( 0 ), medianDistributionChanged( false ),
+customerIndexByDescendDemand( ug.vertexAllocNum )
 {
     Random::setSeed();
+    Log<unsigned>::writeln( Random::getSeed() );
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
@@ -356,12 +369,13 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve( int maxIterCount, int maxNoImprov
 
     std::ostringstream ss;
     ss << '[' << typeid(T_DIST).name() << ']'
-        << "ShiftSwapTabuRelocate(Ba=" << TABU_TENURE_ASSIGN
-        << "|Br=" << TABU_TENURE_RELOCATE
+        << "ShiftSwapTabuRelocateTabu(Ta=" << TABU_TENURE_ASSIGN
+        << "|Tr=" << TABU_TENURE_RELOCATE
         << "|D=" << DEMAND_DISTRIBUTION_DAMPING << ')';
     solvingAlgorithm = ss.str();
 
     initDemandDistribution();
+    initCustomerIndexByDescendDemand();
     genInitSolution();
 
     RangeRand rr( 1, 4 );
@@ -369,7 +383,7 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve( int maxIterCount, int maxNoImprov
     while (iterCount++ < MAX_ITER_COUNT) {
         tabuSearchOnReassignCustomerNeighborhood( MAX_NO_IMPROVE_COUNT );
         if (rr() == 1) {    // relocate a median() with a probability of 1/4
-            relocateSingleMedian();
+            //relocateSingleMedian_tabu();
         } else {    // perturb customer assignment with a probability of 3/4
             // perturbCustomerAssignment();
         }
@@ -389,10 +403,11 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwapTabuRelocate( int maxIter
 
     std::ostringstream ss;
     ss << '[' << typeid(T_DIST).name() << ']'
-        << "ShiftSwapTabuRelocate(B=" << TABU_TENURE_ASSIGN
+        << "ShiftSwapTabuRelocate(T=" << TABU_TENURE_ASSIGN
         << "|D=" << DEMAND_DISTRIBUTION_DAMPING << ')';
     solvingAlgorithm = ss.str();
 
+    initCustomerIndexByDescendDemand();
     genInitSolution();
 
     RangeRand rr( 1, 4 );
@@ -400,7 +415,7 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwapTabuRelocate( int maxIter
     while (iterCount++ < MAX_ITER_COUNT) {
         tabuSearchOnReassignCustomerNeighborhood( MAX_NO_IMPROVE_COUNT );
         if (rr() == 1) {    // relocate a median() with a probability of 1/4
-            relocateSingleMedian();
+            //relocateSingleMedian_basic();
         } else {    // perturb customer assignment with a probability of 3/4
             // perturbCustomerAssignment();
         }
@@ -409,48 +424,6 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwapTabuRelocate( int maxIter
     Log<>::write( "[optimaReachCount] " );
     Log<int>::writeln( optimaReachCount );
 }
-
-template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwapTabu( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign )
-{
-    MAX_ITER_COUNT = maxIterCount;
-    MAX_NO_IMPROVE_COUNT = maxNoImproveCount;
-    TABU_TENURE_ASSIGN = tabuTenureAssign;
-
-    std::ostringstream ss;
-    ss << '[' << typeid(T_DIST).name() << ']' << "ShiftSwapTabu(B=" << TABU_TENURE_ASSIGN << ')';
-    solvingAlgorithm = ss.str();
-
-    genInitSolution();
-
-    while (iterCount++ < MAX_ITER_COUNT) {
-        tabuSearchOnReassignCustomerNeighborhood( MAX_NO_IMPROVE_COUNT );
-    }
-}
-
-template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwap()
-{
-    std::ostringstream ss;
-    ss << '[' << typeid(T_DIST).name() << ']' << "ShiftSwap";
-    solvingAlgorithm = ss.str();
-
-    genInitSolution();
-
-    iterCount++;
-    localSearchOnReassignCustomerNeighborhood();
-}
-
-template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_RandomInit()
-{
-    std::ostringstream ss;
-    ss << '[' << typeid(T_DIST).name() << ']' << "RandomInit";
-    solvingAlgorithm = ss.str();
-
-    genInitSolution();
-}
-
 
 
 
@@ -544,29 +517,31 @@ typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATIO
     RandSelect rs;
 
     for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
-        int medi = curSln.customerIndex[i].med;
-        for (int j = graph.minVertexIndex; j <= graph.maxVertexIndex; j++) {
-            int medj = curSln.customerIndex[j].med;
-            if ((!curSln.isMedian( i )) && !curSln.isMedian( j ) && (medi != medj)) {
-                Unit capDelta = demandList[i] - demandList[j];
-                if (((curSln.restCap[medi] + capDelta) > 0)
-                    && ((curSln.restCap[medj] - capDelta) > 0)) {
-                    T_DIST distDelta = graph.distance( i, medj )
-                        + graph.distance( j, medi )
-                        - graph.distance( i, medi )
-                        - graph.distance( j, medj );
-                    if ((reassignTabu[i][medj] < moveCount)
-                        || (reassignTabu[j][medi] < moveCount)
-                        || ((curSln.totalDist + distDelta) < optima.totalDist)) {
-                        if ((distDelta == minDelta) && rs.isSelected()) {
-                            minDelta = distDelta;
-                            c1 = i;
-                            c2 = j;
-                        } else if ((distDelta < minDelta)) {
-                            rs.reset( 2 );
-                            minDelta = distDelta;
-                            c1 = i;
-                            c2 = j;
+        if (!curSln.isMedian( i )) {
+            int medi = curSln.customerIndex[i].med;
+            for (int j = graph.minVertexIndex; j <= graph.maxVertexIndex; j++) {
+                int medj = curSln.customerIndex[j].med;
+                if (!curSln.isMedian( j ) && (medi != medj)) {
+                    Unit capDelta = demandList[i] - demandList[j];
+                    if (((curSln.restCap[medi] + capDelta) > 0)
+                        && ((curSln.restCap[medj] - capDelta) > 0)) {
+                        T_DIST distDelta = graph.distance( i, medj )
+                            + graph.distance( j, medi )
+                            - graph.distance( i, medi )
+                            - graph.distance( j, medj );
+                        if ((reassignTabu[i][medj] < moveCount)
+                            || (reassignTabu[j][medi] < moveCount)
+                            || ((curSln.totalDist + distDelta) < optima.totalDist)) {
+                            if ((distDelta == minDelta) && rs.isSelected()) {
+                                minDelta = distDelta;
+                                c1 = i;
+                                c2 = j;
+                            } else if ((distDelta < minDelta)) {
+                                rs.reset( 2 );
+                                minDelta = distDelta;
+                                c1 = i;
+                                c2 = j;
+                            }
                         }
                     }
                 }
@@ -578,119 +553,25 @@ typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATIO
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::localSearchOnReassignCustomerNeighborhood()
+void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedian_tabu()
 {
-    while (true) {
-        Move shift, swap;
-        shift = exploreShiftCustomerNeighborhood();
-        if (!shift.isImproved()) {
-            swap = exploreSwapCustomerNeighborhood();
-            if (!swap.isImproved()) {  // local optima of the two neighborhoods found
-                // record the local optima if it is better
-                if (curSln.totalDist < optima.totalDist) {
-                    optima = Output( *this, curSln, iterCount, moveCount );
-                }
-                return;
-            }
-        }
-
-        // execute the move by the better neighborhood
-        if (shift.distDelta < swap.distDelta) {
-            curSln.shiftCustomer( *this, shift.param1, shift.param2, shift.distDelta );
-        } else if (swap.distDelta == MAX_DIST_DELTA) {  // shift >= swap == MAX_DIST_DELTA
-            return;   // no valid move
-        } else {
-            curSln.swapCustomer( *this, swap.param1, swap.param2, swap.distDelta );
-        }
-    }
-}
-
-template <typename T_DIST, int DIST_MULTIPLICATION>
-typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATION>::exploreShiftCustomerNeighborhood()
-{
-    T_DIST delta;
-    T_DIST minDelta( MAX_DIST_DELTA );
-    int customer = INVALID_INDEX;
-    int newMedian = INVALID_INDEX;
-
-    RandSelect rs;
-
-    for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
-        T_DIST originalDist = graph.distance( i, curSln.customerIndex[i].med );
-        for (MedianList::const_iterator iter = curSln.medianList.begin();
-            iter != curSln.medianList.end(); iter++) {
-            if ((!curSln.isMedian( i )) && (curSln.customerIndex[i].med != *iter)) {
-                if (curSln.restCap[*iter] >= demandList[i]) {
-                    delta = graph.distance( i, *iter ) - originalDist;
-                    if ((delta == minDelta) && rs.isSelected()) {
-                        minDelta = delta;
-                        customer = i;
-                        newMedian = *iter;
-                    } else if ((delta < minDelta)) {
-                        rs.reset( 2 );
-                        minDelta = delta;
-                        customer = i;
-                        newMedian = *iter;
-                    }
-                }
-            }
-        }
-    }
-
-    return Move( customer, newMedian, minDelta );
-}
-
-template <typename T_DIST, int DIST_MULTIPLICATION>
-typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATION>::exploreSwapCustomerNeighborhood()
-{
-    T_DIST minDelta( MAX_DIST_DELTA );
-    int c1 = INVALID_INDEX;
-    int c2 = INVALID_INDEX;
-
-    RandSelect rs;
-
-    for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
-        int medi = curSln.customerIndex[i].med;
-        for (int j = graph.minVertexIndex; j <= graph.maxVertexIndex; j++) {
-            int medj = curSln.customerIndex[j].med;
-            if ((!curSln.isMedian( i )) && !curSln.isMedian( j ) && (medi != medj)) {
-                Unit capDelta = demandList[i] - demandList[j];
-                if (((curSln.restCap[medi] + capDelta) > 0)
-                    && ((curSln.restCap[medj] - capDelta) > 0)) {
-                    T_DIST distDelta = graph.distance( i, medj )
-                        + graph.distance( j, medi )
-                        - graph.distance( i, medi )
-                        - graph.distance( j, medj );
-                    if ((distDelta == minDelta) && rs.isSelected()) {
-                        minDelta = distDelta;
-                        c1 = i;
-                        c2 = j;
-                    } else if ((distDelta < minDelta)) {
-                        rs.reset( 2 );
-                        minDelta = distDelta;
-                        c1 = i;
-                        c2 = j;
-                    }
-                }
-            }
-        }
-    }
-
-    return Move( c1, c2, minDelta );
-}
-
-
-template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedian()
-{
-    relocateSingleMedianWithTotallyReassign();
+    relocateSingleMedianWithTotallyReassign_tabu();
     //relocateSingleMedianWithMinimalReassign();
 
     medianDistributionChanged = true;
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedianWithTotallyReassign()
+void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedian_basic()
+{
+    relocateSingleMedianWithTotallyReassign_basic();
+    //relocateSingleMedianWithMinimalReassign();
+
+    medianDistributionChanged = true;
+}
+
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedianWithTotallyReassign_tabu()
 {
     bool isFeasible = true;
     int loopCount = 1;
@@ -699,7 +580,7 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedianWithTotallyReassign(
     int closedMedianIndex = optimaOnCurrentMedianDistribution.medianIndex[closedMedian];
 
     while (true) {    // loop until a feasible solution is generated
-        int openedMedian = selectOpenedMedian();
+        int openedMedian = selectOpenedMedian_tabu();
 
         // replace the closed median with the opened median in median list
         curSln.medianList[closedMedianIndex] = openedMedian;
@@ -709,33 +590,30 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedianWithTotallyReassign(
 
         // reproduce the assignment ( refer to genFeasibleInitSolutionByRestarting() )
         curSln.totalDist = 0;
-
-        RangeRand rr( graph.minVertexIndex, graph.maxVertexIndex );
-
         for (unsigned i = 0; i < medianNum; i++) {
             int med = curSln.medianList[i];
             curSln.customerCount[med] = 0;
             curSln.restCap[med] = capList[med] - demandList[med];
         }
 
-        // assign customers to the closest median with enough capacity
+        // assign with least fragment
         for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
-            if (!curSln.isMedian( i )) {
-                int med;
-                int j = graph.minVertexIndex;
-                for (; j <= graph.maxVertexIndex; j++) {
-                    med = graph.nthClosestVertex( i, j );
-                    if (curSln.isMedian( med ) && (curSln.restCap[med] >= demandList[i])) {
-                        curSln.assignMat[med][curSln.customerCount[med]] = med;
-                        curSln.customerIndex[i].med = med;
-                        curSln.customerIndex[i].seq = curSln.customerCount[med];
+            int customer = customerIndexByDescendDemand[i];
+            if (!curSln.isMedian( customer )) {
+                int j = 0;
+                for (; j < medianNum; j++) {
+                    int med = curSln.medianList[j];
+                    if (curSln.restCap[med] >= demandList[customer]) {
+                        curSln.assignMat[med][curSln.customerCount[med]] = customer;
+                        curSln.customerIndex[customer].med = med;
+                        curSln.customerIndex[customer].seq = curSln.customerCount[med];
                         curSln.customerCount[med]++;
-                        curSln.restCap[med] -= demandList[i];
-                        curSln.totalDist += graph.distance( med, i );
+                        curSln.restCap[med] -= demandList[customer];
+                        curSln.totalDist += graph.distance( med, customer );
                         break;
                     }
                 }
-                if (j == graph.maxVertexIndex) {    // did not find a median
+                if (j == medianNum) {    // did not find a median
                     isFeasible = false;
                     break;
                 }
@@ -744,10 +622,73 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedianWithTotallyReassign(
 
         if (isFeasible) {
             break;
-        } else {    // recover the median distribution
+        } else {    // fail again, recover the median distribution
             curSln.medianList[closedMedianIndex] = closedMedian;
             curSln.medianIndex[closedMedian] = closedMedianIndex;
             curSln.medianIndex[openedMedian] = INVALID_INDEX;
+            curSln.customerIndex[openedMedian].med = INVALID_INDEX;
+            isFeasible = true;
+        }
+    }
+}
+
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedianWithTotallyReassign_basic()
+{
+    bool isFeasible = true;
+    int loopCount = 1;
+
+    int closedMedian = selectClosedMedian();
+    int closedMedianIndex = optimaOnCurrentMedianDistribution.medianIndex[closedMedian];
+
+    while (true) {    // loop until a feasible solution is generated
+        int openedMedian = selectOpenedMedian_basic();
+
+        // replace the closed median with the opened median in median list
+        curSln.medianList[closedMedianIndex] = openedMedian;
+        curSln.medianIndex[closedMedian] = INVALID_INDEX;
+        curSln.medianIndex[openedMedian] = closedMedianIndex;
+        curSln.customerIndex[openedMedian].med = openedMedian;
+
+        // reproduce the assignment ( refer to genFeasibleInitSolutionByRestarting() )
+        curSln.totalDist = 0;
+        for (unsigned i = 0; i < medianNum; i++) {
+            int med = curSln.medianList[i];
+            curSln.customerCount[med] = 0;
+            curSln.restCap[med] = capList[med] - demandList[med];
+        }
+
+        // assign with least fragment
+        for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
+            int customer = customerIndexByDescendDemand[i];
+            if (!curSln.isMedian( customer )) {
+                int j = 0;
+                for (; j < medianNum; j++) {
+                    int med = curSln.medianList[j];
+                    if (curSln.restCap[med] >= demandList[customer]) {
+                        curSln.assignMat[med][curSln.customerCount[med]] = customer;
+                        curSln.customerIndex[customer].med = med;
+                        curSln.customerIndex[customer].seq = curSln.customerCount[med];
+                        curSln.customerCount[med]++;
+                        curSln.restCap[med] -= demandList[customer];
+                        curSln.totalDist += graph.distance( med, customer );
+                        break;
+                    }
+                }
+                if (j == medianNum) {    // did not find a median
+                    isFeasible = false;
+                    break;
+                }
+            }
+        }
+
+        if (isFeasible) {
+            break;
+        } else {    // fail again, recover the median distribution
+            curSln.medianList[closedMedianIndex] = closedMedian;
+            curSln.medianIndex[closedMedian] = closedMedianIndex;
+            curSln.medianIndex[openedMedian] = INVALID_INDEX;
+            curSln.customerIndex[openedMedian].med = INVALID_INDEX;
             isFeasible = true;
         }
     }
@@ -843,13 +784,6 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectClosedMedian()
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
-int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian()
-{
-    //return selectOpenedMedian_tabu();
-    return selectOpenedMedian_basic();
-}
-
-template <typename T_DIST, int DIST_MULTIPLICATION>
 int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_tabu()
 {
     RandSelect rs;
@@ -857,7 +791,7 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_tabu()
     int openedMedian = graph.minVertexIndex;
     T_DIST maxEval;
     // init maxEval by the first customer
-    for (; openedMedian < graph.maxVertexIndex; openedMedian++) {
+    for (; openedMedian <= graph.maxVertexIndex; openedMedian++) {
         if (!curSln.isMedian( openedMedian ) && (relocateTabu[openedMedian] < iterCount)) {
             maxEval = demandDistribution[openedMedian];
             for (int j = 0; j < medianNum; j++) {
@@ -869,7 +803,7 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_tabu()
     }
 
     // evaluate each customer whether to open a median near it
-    for (int i = graph.minVertexIndex; i < graph.maxVertexIndex; i++) {
+    for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
         if (!curSln.isMedian( i ) && (relocateTabu[openedMedian] < iterCount)) {
             T_DIST eval = demandDistribution[i];
             for (int j = 0; j < medianNum; j++) {
@@ -899,9 +833,9 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_basic()
     int maxEvalCustomer = graph.minVertexIndex;
     T_DIST maxEval = 0;
     // init maxEval by the first customer
-    for (int i = graph.minVertexIndex; i < graph.maxVertexIndex; i++) {
+    for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
         if (!curSln.isMedian( i )) {
-            for (int j = graph.minVertexIndex; j < graph.maxVertexIndex; j++) {
+            for (int j = graph.minVertexIndex; j <= graph.maxVertexIndex; j++) {
                 T_DIST d = exp( -(graph.distance( i, j ) / DEMAND_DISTRIBUTION_DAMPING) );
                 if (curSln.isMedian( j )) {
                     maxEval -= capList[j] * d;
@@ -913,10 +847,10 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_basic()
     }
 
     // evaluate each customer whether to open a median near it
-    for (int i = graph.minVertexIndex; i < graph.maxVertexIndex; i++) {
+    for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
         if (!curSln.isMedian( i )) {
             T_DIST eval = 0;
-            for (int j = graph.minVertexIndex; j < graph.maxVertexIndex; j++) {
+            for (int j = graph.minVertexIndex; j <= graph.maxVertexIndex; j++) {
                 T_DIST d = exp( -(graph.distance( i, j ) / DEMAND_DISTRIBUTION_DAMPING) );
                 if (curSln.isMedian( j )) {
                     eval -= capList[j] * d;
@@ -936,7 +870,7 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_basic()
     }
 
     // select the median to be opened randomly near the most-lack-of-service customer
-    int openedMedian;
+    int openedMedian = INVALID_INDEX;
     RangeRand rr( 0, 3 );
     do {
         openedMedian = graph.nthClosestVertex( maxEvalCustomer, rr() );
@@ -954,17 +888,68 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::perturbCustomerAssignment()
 template <typename T_DIST, int DIST_MULTIPLICATION>
 void CPMP<T_DIST, DIST_MULTIPLICATION>::recoverByReassign()
 {
+    Unit overflow = 0;
+    Unit maxRestCap = 0;
+    for (int i = 0; i < medianNum; i++) {
+        Unit restCap = curSln.restCap[curSln.medianList[i]];
+        if (maxRestCap < restCap) {
+            maxRestCap = restCap;
+        } else if (restCap < 0) {
+            overflow -= restCap;
+        }
+    }
+    while (overflow <= 0) {
+        RecoverMove shift, swap;
+        shift = exploreTabuShiftCustomerNeighborhood();
+        if (!shift.isImproved()) {
+            swap = exploreTabuSwapCustomerNeighborhood();
+            if (!swap.isImproved()) {  // switch to secondary objective
 
+            }
+        }
+
+        // execute the move by the better neighborhood
+        if (shift.distDelta < swap.distDelta) {
+            reassignTabu[shift.param1][shift.param2] = moveCount + TABU_TENURE_ASSIGN;
+            curSln.shiftCustomer( *this, shift.param1, shift.param2, shift.distDelta );
+        } else if (swap.distDelta == MAX_DIST_DELTA) {  // shift >= swap == MAX_DIST_DELTA
+            return;   // no valid move
+        } else {
+            reassignTabu[swap.param1][curSln.customerIndex[swap.param1].med] = moveCount + TABU_TENURE_ASSIGN;
+            reassignTabu[swap.param2][curSln.customerIndex[swap.param2].med] = moveCount + TABU_TENURE_ASSIGN;
+            curSln.swapCustomer( *this, swap.param1, swap.param2, swap.distDelta );
+        }
+
+        moveCount++;
+    }
 }
-
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
 void CPMP<T_DIST, DIST_MULTIPLICATION>::initDemandDistribution()
 {
-    for (int i = graph.minVertexIndex; i < graph.maxVertexIndex; i++) {
-        for (int j = graph.minVertexIndex; j < graph.maxVertexIndex; j++) {
+    for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
+        for (int j = graph.minVertexIndex; j <= graph.maxVertexIndex; j++) {
             demandDistribution[i] += demandList[j] * exp( -(graph.distance( i, j ) / DEMAND_DISTRIBUTION_DAMPING) );
         }
+    }
+}
+
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::initCustomerIndexByDescendDemand()
+{
+    // insertion sort
+    customerIndexByDescendDemand[graph.minVertexIndex] = graph.minVertexIndex;
+    for (int i = graph.minVertexIndex + 1; i <= graph.maxVertexIndex; i++) {
+        int j = i;
+        for (; j > graph.minVertexIndex; j--) {
+            int k = j - 1;
+            if (demandList[i] > demandList[customerIndexByDescendDemand[k]]) {
+                customerIndexByDescendDemand[j] = customerIndexByDescendDemand[k];
+            } else {
+                break;
+            }
+        }
+        customerIndexByDescendDemand[j] = i;
     }
 }
 

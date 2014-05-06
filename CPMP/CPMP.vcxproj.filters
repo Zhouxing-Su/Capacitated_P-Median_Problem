@@ -38,25 +38,25 @@
     <ClInclude Include="cpmp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\CPPutilibs\Double.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\CPPutilibs\Log.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\CPPutilibs\Timer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\CPPutilibs\Random.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\CPPutilibs\RandSelect.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\CPPutilibs\RangeRand.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\CPPutilibs\Timer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\CPPutilibs\Double.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\CPPutilibs\Graph.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\CPPutilibs\Random.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\CPPutilibs\Log.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

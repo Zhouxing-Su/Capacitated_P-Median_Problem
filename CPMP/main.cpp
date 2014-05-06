@@ -6,11 +6,10 @@ const int ACCURACY = 1;
 typedef int DistType;
 typedef CPMP<DistType, ACCURACY> Problem;
 
-int solve_pmedcap1( ofstream &csvFile, int instanceNum )
+int solve_pmedcap1( ofstream &csvFile, int group, int instanceNum )
 {
-
     ostringstream fname;
-    fname << "../Instances/pmedcap1(" << instanceNum << ").txt";
+    fname << "../Instances/pmedcap" << group << "(" << instanceNum << ").txt";
     ifstream ifs( fname.str() );
 
     unsigned problemNum, optima;
@@ -43,12 +42,24 @@ int solve_pmedcap1( ofstream &csvFile, int instanceNum )
 
     // for each instance, run some times for judging average performance
     const int runTime = 10;
-    const int maxIterCountBase = 800;
+    const int maxIterCountBase = 400;
     const int tabuTenureAssign = uug.vertexNum * medianNum / 8;
-    const int tabuTenureRelocate = uug.vertexNum / 8;
+    const int tabuTenureRelocate = medianNum / 2;
     const int maxNoImproveCount = tabuTenureAssign * 32;
     const DistType demandDistributionDamping = (uug.DistMultiplication * (gg.getMinCoverRect().right - gg.getMinCoverRect().left) / 4);
     for (int i = 1; i <= runTime; i++) {
+        {
+            Problem cpmp( uug, dl, medianNum, medianCap );
+            //cpmp.solve_ShiftSwapTabuRelocate( maxIterCountBase, maxNoImproveCount, tabuTenureAssign, demandDistributionDamping );
+            cpmp.solve( maxIterCountBase, maxNoImproveCount, tabuTenureAssign, tabuTenureRelocate,
+                demandDistributionDamping );
+            cpmp.printResult( cout );
+            if (!cpmp.check()) {
+                csvFile << "[LogicError] ";
+            }
+            cpmp.appendResultToSheet( fname.str(), csvFile );
+        }
+        ;
         {
             Problem cpmp( uug, dl, medianNum, medianCap );
             cpmp.solve_ShiftSwapTabuRelocate( maxIterCountBase, maxNoImproveCount, tabuTenureAssign, demandDistributionDamping );
@@ -70,7 +81,12 @@ int main()
     ofstream ofs( "../Instances/log.csv", ios::app );
     //CPMP<DistType>::initResultSheet( ofs ); // call if log.csv is not exist
 
-    solve_pmedcap1( ofs, 1 );
+    solve_pmedcap1( ofs, 4, 1 );
+    //for (int i = 1; i <= 4; i++) {
+    //    for (int j = 1; j <= 20; j++) {
+    //        solve_pmedcap1( ofs, i, j );
+    //    }
+    //}
 
     ofs.close();
     return 0;
