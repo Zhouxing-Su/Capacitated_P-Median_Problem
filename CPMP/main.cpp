@@ -41,37 +41,46 @@ int solve_pmedcap1( ofstream &csvFile, int group, int instanceNum )
     uug.getDistSeqTable();
 
     // for each instance, run some times for judging average performance
-    const int runTime = 10;
-    const int maxIterCountBase = 800;
+    const int runTime = 8;
+    const int maxIterCountBase = 1600;
     const int tabuTenureAssign = uug.vertexNum * medianNum / 8;
     const int tabuTenureOpenMedian = uug.vertexNum / 4;
-    const int tabuTenureCloseMedian = medianNum / 4;
+    const int tabuTenureCloseMedian = medianNum / 3;
     const int maxNoImproveCount = uug.vertexNum * medianNum * 8;
+    const int randomWalkStep = uug.vertexNum * 2;
     const DistType demandDistributionDamping = (uug.DistMultiplication * (gg.getMinCoverRect().right - gg.getMinCoverRect().left) / 4);
     for (int i = 1; i <= runTime; i++) {
         {
             Problem cpmp( uug, dl, medianNum, medianCap );
-            //cpmp.solve_ShiftSwapTabuRelocate( maxIterCountBase, maxNoImproveCount, tabuTenureAssign, demandDistributionDamping );
-            cpmp.solve( maxIterCountBase, maxNoImproveCount, tabuTenureAssign, 
-                tabuTenureOpenMedian, tabuTenureCloseMedian, demandDistributionDamping );
+            cpmp.solve( maxIterCountBase, maxNoImproveCount, tabuTenureAssign,
+                tabuTenureOpenMedian, tabuTenureCloseMedian, demandDistributionDamping, randomWalkStep );
             cpmp.printResult( cout );
             if (!cpmp.check()) {
                 csvFile << "[LogicError] ";
             }
             cpmp.appendResultToSheet( fname.str(), csvFile );
         }
-        //;
-        //{
-        //    Problem cpmp( uug, dl, medianNum, medianCap );
-        //    cpmp.solve_ShiftSwapTabuRelocate( maxIterCountBase, maxNoImproveCount, tabuTenureAssign, demandDistributionDamping );
-        //    //cpmp.solve( maxIterCountBase, maxNoImproveCount, tabuTenureAssign, tabuTenureOpenMedian,
-        //    //    demandDistributionDamping );
-        //    cpmp.printResult( cout );
-        //    if (!cpmp.check()) {
-        //        csvFile << "[LogicError] ";
-        //    }
-        //    cpmp.appendResultToSheet( fname.str(), csvFile );
-        //}
+        ;
+        {
+            Problem cpmp( uug, dl, medianNum, medianCap );
+            cpmp.solve_ShiftSwapTabuRelocateTabu( maxIterCountBase, maxNoImproveCount, tabuTenureAssign,
+                tabuTenureOpenMedian, tabuTenureCloseMedian, demandDistributionDamping );
+            cpmp.printResult( cout );
+            if (!cpmp.check( )) {
+                csvFile << "[LogicError] ";
+            }
+            cpmp.appendResultToSheet( fname.str( ), csvFile );
+        }
+        ;
+        {
+            Problem cpmp( uug, dl, medianNum, medianCap );
+            cpmp.solve_ShiftSwapTabuRelocate( maxIterCountBase, maxNoImproveCount, tabuTenureAssign, demandDistributionDamping );
+            cpmp.printResult( cout );
+            if (!cpmp.check()) {
+                csvFile << "[LogicError] ";
+            }
+            cpmp.appendResultToSheet( fname.str(), csvFile );
+        }
     }
 
     return 0;
@@ -82,12 +91,12 @@ int main()
     ofstream ofs( "../Instances/log.csv", ios::app );
     //CPMP<DistType>::initResultSheet( ofs ); // call if log.csv is not exist
 
-    solve_pmedcap1( ofs, 1, 1 );
-    //for (int i = 1; i <= 4; i++) {
-    //    for (int j = 1; j <= 20; j++) {
-    //        solve_pmedcap1( ofs, i, j );
-    //    }
-    //}
+    //solve_pmedcap1( ofs, 1, 20 );
+    for (int i = 1; i <= 4; i++) {
+        for (int j = 1; j <= 20; j++) {
+            solve_pmedcap1( ofs, i, j );
+        }
+    }
 
     ofs.close();
     return 0;

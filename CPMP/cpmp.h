@@ -10,7 +10,9 @@
 *       TABU_TENURE_ASSIGN @ solve()
 *       TABU_TENURE_OPEN_MED @ solve()
 *       TABU_TENURE_CLOSE_MED @ solve()
+*       PERTURB_STRENGTH @ solve()
 *       DEMAND_DISTRIBUTION_DAMPING @ selectOpenedMedian()
+*       N @ selectOpenedMedian_basic()
 *
 *   Problems:
 *       1. add seed in log file to make it possible to reproduce the calculation.
@@ -137,7 +139,6 @@ public:
     static const int INVALID_INDEX = -1;
     static const T_DIST MAX_DIST_DELTA = 1000 * DIST_MULTIPLICATION;
     static const Unit MAX_OVERFLOW_DELTA = 1000;
-    static const Unit MIN_MAX_REST_CAP_DELTA = -1000;
 
     // known conditions
     const UndirectedGraph<T_DIST, DIST_MULTIPLICATION> graph;
@@ -148,7 +149,7 @@ public:
     CPMP( UndirectedGraph<T_DIST, DIST_MULTIPLICATION> &ug, const DemandList &demand, unsigned medianNum, unsigned medianCap );
     ~CPMP();
 
-    void solve( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, int tabuTenureOpenMedian, int tabuTenureCloseMedian, T_DIST demandDistributionDamping );
+    void solve( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, int tabuTenureOpenMedian, int tabuTenureCloseMedian, T_DIST demandDistributionDamping, int randomWalkStep );
     void solve_ShiftSwapTabuRelocateTabu( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, int tabuTenureOpenMedian, int tabuTenureCloseMedian, T_DIST demandDistributionDamping );
     void solve_ShiftSwapTabuRelocate( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, T_DIST demandDistributionDamping );
     bool check() const;
@@ -175,8 +176,8 @@ private:
 
     struct RecoverMove : public Move
     {
-        RecoverMove( int p1 = INVALID_INDEX, int p2 = INVALID_INDEX, T_DIST dd = MAX_DIST_DELTA, Unit od = MAX_OVERFLOW_DELTA, Unit mrcd = MIN_MAX_REST_CAP_DELTA )
-        : Move( p1, p2, dd ), overflowDelta( od ), maxRestCap( mrcd )
+        RecoverMove( int p1 = INVALID_INDEX, int p2 = INVALID_INDEX, T_DIST dd = MAX_DIST_DELTA, Unit od = MAX_OVERFLOW_DELTA )
+        : Move( p1, p2, dd ), overflowDelta( od )
         {
         }
 
@@ -186,7 +187,6 @@ private:
         }
 
         Unit overflowDelta;
-        Unit maxRestCap;
     };
 
     struct Solution
@@ -195,7 +195,7 @@ private:
         Solution( const CPMP &cpmp ) : medianList( cpmp.medianNum ), medianIndex( cpmp.graph.vertexAllocNum, INVALID_INDEX ),
             customerIndex( cpmp.graph.vertexAllocNum ), assignMat( cpmp.graph.vertexAllocNum, std::vector<int>( cpmp.graph.vertexNum, INVALID_INDEX ) ),
             restCap( cpmp.graph.vertexAllocNum, 0 ), customerCount( cpmp.graph.vertexAllocNum, 0 ), totalDist( 0 ),
-            totalOverflow( 0 ), maxRestCap( 0 )
+            totalOverflow( 0 )
         {
         }
 
@@ -251,7 +251,6 @@ private:
 
         T_DIST totalDist;
         Unit totalOverflow; // for recovery
-        Unit maxRestCap;    // for recovery
 
         MedianList medianList;          // has a fixed length of P
         std::vector<int> medianIndex;   // i == medianList[medianIndex[i]]
@@ -288,6 +287,7 @@ private:
     int selectOpenedMedian_tabu();
 
     void perturbCustomerAssignment();
+    void randomWalk( int step );
 
     void recoverByReassign();
     RecoverMove exploreTabuShiftCustomerNeighborhood_Recover();
@@ -323,6 +323,7 @@ private:
     int TABU_TENURE_OPEN_MED;
     int TABU_TENURE_CLOSE_MED;
     int DEMAND_DISTRIBUTION_DAMPING;
+    int PERTURB_STRENGTH;
 
     Output optima;
     Timer timer;
@@ -372,8 +373,9 @@ iterCount( iterationCount ), median( s.medianList ), assign( cpmp.graph.vertexNu
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::solve( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign,
-    int tabuTenureOpenMedian, int tabuTenureCloseMedian, T_DIST demandDistributionDamping )
+void CPMP<T_DIST, DIST_MULTIPLICATION>::solve( int maxIterCount, int maxNoImproveCount,
+    int tabuTenureAssign, int tabuTenureOpenMedian, int tabuTenureCloseMedian,
+    T_DIST demandDistributionDamping, int randomWalkStep )
 {
     MAX_ITER_COUNT = maxIterCount;
     MAX_NO_IMPROVE_COUNT = maxNoImproveCount;
@@ -381,27 +383,30 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve( int maxIterCount, int maxNoImprov
     TABU_TENURE_OPEN_MED = tabuTenureOpenMedian;
     TABU_TENURE_CLOSE_MED = tabuTenureCloseMedian;
     DEMAND_DISTRIBUTION_DAMPING = demandDistributionDamping;
+    PERTURB_STRENGTH = randomWalkStep;
 
     std::ostringstream ss;
     ss << '[' << typeid(T_DIST).name() << ']'
-        << "ShiftSwapTabuRelocateRecover(Ta=" << TABU_TENURE_ASSIGN
+        << "ShiftSwapTabuRelocateRecoverPerturb(Ta=" << TABU_TENURE_ASSIGN
         << "|To=" << TABU_TENURE_OPEN_MED
         << "|Tc=" << TABU_TENURE_CLOSE_MED
-        << "|D=" << DEMAND_DISTRIBUTION_DAMPING << ')';
+        << "|D=" << DEMAND_DISTRIBUTION_DAMPING
+        << "|P=" << PERTURB_STRENGTH
+        << ')';
     solvingAlgorithm = ss.str();
 
     initDemandDistribution();
     initCustomerIndexByDescendDemand();
     genInitSolution();
 
-    RangeRand rr( 1, 4 );
+    RangeRand rr( 1, 3 );
 
     while (iterCount++ < MAX_ITER_COUNT) {
         tabuSearchOnReassignCustomerNeighborhood( MAX_NO_IMPROVE_COUNT );
-        if (rr() == 1) {    // relocate a median() with a probability of 1/4
+        if (rr() == 1) {    // relocate a median() with a probability of 1/3
             relocateSingleMedian_basic();
-        } else {    // perturb customer assignment with a probability of 3/4
-            // perturbCustomerAssignment();
+        } else {    // perturb customer assignment with a probability of 2/3
+            perturbCustomerAssignment();
         }
     }
     Log<>::write( "[optimaReachCount] " );
@@ -607,8 +612,8 @@ typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATIO
 template <typename T_DIST, int DIST_MULTIPLICATION>
 void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedian_tabu()
 {
-    relocateSingleMedianWithTotallyReassign_tabu();
-    //relocateSingleMedianWithMinimalReassign_tabu();
+    //relocateSingleMedianWithTotallyReassign_tabu();
+    relocateSingleMedianWithMinimalReassign_tabu();
 
     medianDistributionChanged = true;
 }
@@ -764,6 +769,7 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedianWithMinimalReassign_
     curSln.assignMat[oldMedian][curSln.customerIndex[openedMedian].seq] = lastCustomer;
     curSln.customerIndex[lastCustomer].seq = curSln.customerIndex[openedMedian].seq;
     curSln.customerIndex[openedMedian].med = openedMedian;
+    curSln.restCap[oldMedian] += demandList[openedMedian];
     curSln.totalDist -= graph.distance( openedMedian, oldMedian );
     // replace the closed median with the opened median in median list
     curSln.medianList[closedMedianIndex] = openedMedian;
@@ -809,6 +815,7 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::relocateSingleMedianWithMinimalReassign_
     curSln.assignMat[oldMedian][curSln.customerIndex[openedMedian].seq] = lastCustomer;
     curSln.customerIndex[lastCustomer].seq = curSln.customerIndex[openedMedian].seq;
     curSln.customerIndex[openedMedian].med = openedMedian;
+    curSln.restCap[oldMedian] += demandList[openedMedian];
     curSln.totalDist -= graph.distance( openedMedian, oldMedian );
     // replace the closed median with the opened median in median list
     curSln.medianList[closedMedianIndex] = openedMedian;
@@ -968,7 +975,8 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_basic()
 
     // select the median to be opened randomly near the most-lack-of-service customer
     int openedMedian = INVALID_INDEX;
-    RangeRand rr( 0, 3 );
+    int N = graph.vertexNum / 16;
+    RangeRand rr( 0, N );
     do {
         openedMedian = graph.nthClosestVertex( maxEvalCustomer, rr() );
     } while (curSln.isMedian( openedMedian ));
@@ -980,19 +988,56 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_basic()
 template <typename T_DIST, int DIST_MULTIPLICATION>
 void CPMP<T_DIST, DIST_MULTIPLICATION>::perturbCustomerAssignment()
 {
+    curSln = optimaOnCurrentMedianDistribution;
+    randomWalk( PERTURB_STRENGTH );
+}
 
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::randomWalk( int step )
+{
+    RangeRand rop( 0, 1 );
+    RangeRand rc( graph.minVertexIndex, graph.maxVertexIndex );
+    RangeRand rm( 0, medianNum - 1 );
+
+    T_DIST distDelta;
+
+    while (--step) {
+        if (rop() == 0) {   // shift
+            int median = curSln.medianList[rm()];
+            int oldMedian;
+            int customer;
+            do {
+                customer = rc();
+                oldMedian = curSln.customerIndex[customer].med;
+            } while (curSln.isMedian( customer ) || (oldMedian == median));
+            distDelta = graph.distance( customer, median ) - graph.distance( customer, oldMedian );
+            curSln.shiftCustomer( *this, customer, median, distDelta );
+        } else {    // swap
+            int customer1, customer2, med1, med2;
+            do {
+                customer1 = rc();
+            } while (curSln.isMedian( customer1 ));
+            med1 = curSln.customerIndex[customer1].med;
+            do {
+                customer2 = rc();
+                med2 = curSln.customerIndex[customer2].med;
+            } while (curSln.isMedian( customer2 ) || (med1 == med2));
+            distDelta = graph.distance( customer1, med2 )
+                + graph.distance( customer2, med1 )
+                - graph.distance( customer1, med1 )
+                - graph.distance( customer2, med2 );
+            curSln.swapCustomer( *this, customer1, customer2, distDelta );
+        }
+    }
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
 void CPMP<T_DIST, DIST_MULTIPLICATION>::recoverByReassign()
 {
     curSln.totalOverflow = 0;
-    curSln.maxRestCap = 0;
     for (int i = 0; i < medianNum; i++) {
         Unit restCap = curSln.restCap[curSln.medianList[i]];
-        if (curSln.maxRestCap < restCap) {
-            curSln.maxRestCap = restCap;
-        } else if (restCap < 0) {
+        if (restCap < 0) {
             curSln.totalOverflow -= restCap;
         }
     }
@@ -1009,26 +1054,11 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::recoverByReassign()
             recoverTabu[shift.param1][shift.param2] = recoverMoveCount + TABU_TENURE_ASSIGN;
             curSln.shiftCustomer( *this, shift.param1, shift.param2, shift.distDelta );
             curSln.totalOverflow += shift.overflowDelta;
-            curSln.maxRestCap = shift.maxRestCap;
-        } else if (swap.distDelta == MAX_DIST_DELTA) {  // shift >= swap == MAX_DIST_DELTA
-            if (shift.maxRestCap > swap.maxRestCap) {
-                recoverTabu[shift.param1][shift.param2] = recoverMoveCount + TABU_TENURE_ASSIGN;
-                curSln.shiftCustomer( *this, shift.param1, shift.param2, shift.distDelta );
-                curSln.totalOverflow += shift.overflowDelta;
-                curSln.maxRestCap = shift.maxRestCap;
-            } else {
-                recoverTabu[swap.param1][curSln.customerIndex[swap.param1].med] = recoverMoveCount + TABU_TENURE_ASSIGN;
-                recoverTabu[swap.param2][curSln.customerIndex[swap.param2].med] = recoverMoveCount + TABU_TENURE_ASSIGN;
-                curSln.swapCustomer( *this, swap.param1, swap.param2, swap.distDelta );
-                curSln.totalOverflow += swap.overflowDelta;
-                curSln.maxRestCap = swap.maxRestCap;
-            }
         } else {
             recoverTabu[swap.param1][curSln.customerIndex[swap.param1].med] = recoverMoveCount + TABU_TENURE_ASSIGN;
             recoverTabu[swap.param2][curSln.customerIndex[swap.param2].med] = recoverMoveCount + TABU_TENURE_ASSIGN;
             curSln.swapCustomer( *this, swap.param1, swap.param2, swap.distDelta );
             curSln.totalOverflow += swap.overflowDelta;
-            curSln.maxRestCap = swap.maxRestCap;
         }
 
         recoverMoveCount++;
@@ -1041,14 +1071,11 @@ template <typename T_DIST, int DIST_MULTIPLICATION>
 typename CPMP<T_DIST, DIST_MULTIPLICATION>::RecoverMove CPMP<T_DIST, DIST_MULTIPLICATION>::exploreTabuShiftCustomerNeighborhood_Recover()
 {
     RecoverMove rmo;    // higher priority for reducing overflow
-    RecoverMove rmr;    // higher priority for increasing restcap
 
     T_DIST distDelta;
     Unit overflowDelta;
-    Unit maxRestCap;
 
     RandSelect rso;
-    RandSelect rsr;
 
     for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
         if (!curSln.isMedian( i )) {
@@ -1075,23 +1102,12 @@ typename CPMP<T_DIST, DIST_MULTIPLICATION>::RecoverMove CPMP<T_DIST, DIST_MULTIP
                         } else {
                             overflowDelta += demandList[i];
                         }
-                        if (curSln.maxRestCap < (curSln.restCap[oldMed] + demandList[i])) {
-                            maxRestCap = curSln.restCap[oldMed] + demandList[i];
-                        } else {
-                            maxRestCap = curSln.maxRestCap;
-                        }
                         // update extreme value
                         if ((overflowDelta == rmo.overflowDelta) && rso.isSelected()) {
-                            rmo = RecoverMove( i, *iter, distDelta, overflowDelta, maxRestCap );
+                            rmo = RecoverMove( i, *iter, distDelta, overflowDelta );
                         } else if (overflowDelta < rmo.overflowDelta) {
                             rso.reset( 2 );
-                            rmo = RecoverMove( i, *iter, distDelta, overflowDelta, maxRestCap );
-                        }
-                        if ((maxRestCap == rmr.maxRestCap) && rsr.isSelected()) {
-                            rmr = RecoverMove( i, *iter, distDelta, overflowDelta, maxRestCap );
-                        } else if (maxRestCap > rmr.maxRestCap) {
-                            rsr.reset( 2 );
-                            rmr = RecoverMove( i, *iter, distDelta, overflowDelta, maxRestCap );
+                            rmo = RecoverMove( i, *iter, distDelta, overflowDelta );
                         }
                     }
                 }
@@ -1099,21 +1115,18 @@ typename CPMP<T_DIST, DIST_MULTIPLICATION>::RecoverMove CPMP<T_DIST, DIST_MULTIP
         }
     }
 
-    return ((rmo.overflowDelta < 0) ? rmo : rmr);
+    return rmo;
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
 typename CPMP<T_DIST, DIST_MULTIPLICATION>::RecoverMove CPMP<T_DIST, DIST_MULTIPLICATION>::exploreTabuSwapCustomerNeighborhood_Recover()
 {
     RecoverMove rmo;    // higher priority for reducing overflow
-    RecoverMove rmr;    // higher priority for increasing restcap
 
     T_DIST distDelta;
     Unit overflowDelta;
-    Unit maxRestCap;
 
     RandSelect rso;
-    RandSelect rsr;
 
     for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
         if (!curSln.isMedian( i )) {
@@ -1151,26 +1164,12 @@ typename CPMP<T_DIST, DIST_MULTIPLICATION>::RecoverMove CPMP<T_DIST, DIST_MULTIP
                                 overflowDelta -= (curSln.restCap[medj] - capDelta);
                             }
                         }
-                        if (curSln.maxRestCap < (curSln.restCap[medi] + capDelta)) {
-                            maxRestCap = curSln.restCap[medi] + capDelta;
-                        } else {
-                            maxRestCap = curSln.maxRestCap;
-                        }
-                        if (maxRestCap < (curSln.restCap[medj] - capDelta)) {
-                            maxRestCap = curSln.restCap[medj] - capDelta;
-                        }
                         // update extreme value
                         if ((overflowDelta == rmo.overflowDelta) && rso.isSelected()) {
-                            rmo = RecoverMove( i, j, distDelta, overflowDelta, maxRestCap );
+                            rmo = RecoverMove( i, j, distDelta, overflowDelta );
                         } else if (overflowDelta < rmo.overflowDelta) {
                             rso.reset( 2 );
-                            rmo = RecoverMove( i, j, distDelta, overflowDelta, maxRestCap );
-                        }
-                        if ((maxRestCap == rmr.maxRestCap) && rsr.isSelected()) {
-                            rmr = RecoverMove( i, j, distDelta, overflowDelta, maxRestCap );
-                        } else if (maxRestCap > rmr.maxRestCap) {
-                            rsr.reset( 2 );
-                            rmr = RecoverMove( i, j, distDelta, overflowDelta, maxRestCap );
+                            rmo = RecoverMove( i, j, distDelta, overflowDelta );
                         }
                     }
                 }
@@ -1178,7 +1177,7 @@ typename CPMP<T_DIST, DIST_MULTIPLICATION>::RecoverMove CPMP<T_DIST, DIST_MULTIP
         }
     }
 
-    return ((rmo.overflowDelta < 0) ? rmo : rmr);
+    return rmo;
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
