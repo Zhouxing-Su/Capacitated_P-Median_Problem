@@ -322,6 +322,9 @@ private:
     int TABU_TENURE_ASSIGN;
     int TABU_TENURE_OPEN_MED;
     int TABU_TENURE_CLOSE_MED;
+    RangeRand TTAO;    // tabuTenureOscillation
+    RangeRand TTOO;
+    RangeRand TTCO;
     int DEMAND_DISTRIBUTION_DAMPING;
     int PERTURB_STRENGTH;
 
@@ -382,6 +385,9 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve( int maxIterCount, int maxNoImprov
     TABU_TENURE_ASSIGN = tabuTenureAssign;
     TABU_TENURE_OPEN_MED = tabuTenureOpenMedian;
     TABU_TENURE_CLOSE_MED = tabuTenureCloseMedian;
+    TTAO = RangeRand( TABU_TENURE_ASSIGN / 12, TABU_TENURE_ASSIGN / 6 );
+    TTOO = RangeRand( TABU_TENURE_OPEN_MED / 8, TABU_TENURE_OPEN_MED / 4 );
+    TTCO = RangeRand( TABU_TENURE_CLOSE_MED / 6, TABU_TENURE_CLOSE_MED / 3 );
     DEMAND_DISTRIBUTION_DAMPING = demandDistributionDamping;
     PERTURB_STRENGTH = randomWalkStep;
 
@@ -422,6 +428,9 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwapTabuRelocateTabu( int max
     TABU_TENURE_ASSIGN = tabuTenureAssign;
     TABU_TENURE_OPEN_MED = tabuTenureOpenMedian;
     TABU_TENURE_CLOSE_MED = tabuTenureCloseMedian;
+    TTAO = RangeRand( TABU_TENURE_ASSIGN / 12, TABU_TENURE_ASSIGN / 6 );
+    TTOO = RangeRand( TABU_TENURE_OPEN_MED / 8, TABU_TENURE_OPEN_MED / 4 );
+    TTCO = RangeRand( TABU_TENURE_CLOSE_MED / 6, TABU_TENURE_CLOSE_MED / 3 );
     DEMAND_DISTRIBUTION_DAMPING = demandDistributionDamping;
 
     std::ostringstream ss;
@@ -456,6 +465,7 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_ShiftSwapTabuRelocate( int maxIter
     MAX_ITER_COUNT = maxIterCount;
     MAX_NO_IMPROVE_COUNT = maxNoImproveCount;
     TABU_TENURE_ASSIGN = tabuTenureAssign;
+    TTAO = RangeRand( TABU_TENURE_ASSIGN / 12, TABU_TENURE_ASSIGN / 6 );
     DEMAND_DISTRIBUTION_DAMPING = demandDistributionDamping;
 
     std::ostringstream ss;
@@ -510,13 +520,13 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::tabuSearchOnReassignCustomerNeighborhood
 
         // execute the move by the better neighborhood
         if (shift.distDelta < swap.distDelta) {
-            reassignTabu[shift.param1][shift.param2] = moveCount + TABU_TENURE_ASSIGN;
+            reassignTabu[shift.param1][shift.param2] = moveCount + TABU_TENURE_ASSIGN + TTAO();
             curSln.shiftCustomer( *this, shift.param1, shift.param2, shift.distDelta );
         } else if (swap.distDelta == MAX_DIST_DELTA) {  // shift >= swap == MAX_DIST_DELTA
             return;   // no valid move
         } else {
-            reassignTabu[swap.param1][curSln.customerIndex[swap.param1].med] = moveCount + TABU_TENURE_ASSIGN;
-            reassignTabu[swap.param2][curSln.customerIndex[swap.param2].med] = moveCount + TABU_TENURE_ASSIGN;
+            reassignTabu[swap.param1][curSln.customerIndex[swap.param1].med] = moveCount + TABU_TENURE_ASSIGN + TTAO();
+            reassignTabu[swap.param2][curSln.customerIndex[swap.param2].med] = moveCount + TABU_TENURE_ASSIGN + TTAO();
             curSln.swapCustomer( *this, swap.param1, swap.param2, swap.distDelta );
         }
 
@@ -576,7 +586,7 @@ typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATIO
     for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
         if (!curSln.isMedian( i )) {
             int medi = curSln.customerIndex[i].med;
-            for (int j = graph.minVertexIndex; j <= graph.maxVertexIndex; j++) {
+            for (int j = i + 1; j <= graph.maxVertexIndex; j++) {
                 int medj = curSln.customerIndex[j].med;
                 if (!curSln.isMedian( j ) && (medi != medj)) {
                     Unit capDelta = demandList[i] - demandList[j];
@@ -887,7 +897,7 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectClosedMedian()
         }
     }
 
-    relocateTabu[closedMedian] = iterCount + TABU_TENURE_OPEN_MED;
+    relocateTabu[closedMedian] = iterCount + TABU_TENURE_OPEN_MED + TTOO();
     return closedMedian;
 }
 
@@ -930,7 +940,7 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_tabu()
         }
     }
 
-    relocateTabu[openedMedian] = iterCount + TABU_TENURE_CLOSE_MED;
+    relocateTabu[openedMedian] = iterCount + TABU_TENURE_CLOSE_MED + TTCO();
     return openedMedian;
 }
 
@@ -981,7 +991,7 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_basic()
         openedMedian = graph.nthClosestVertex( maxEvalCustomer, rr() );
     } while (curSln.isMedian( openedMedian ));
 
-    relocateTabu[openedMedian] = iterCount + TABU_TENURE_CLOSE_MED;
+    relocateTabu[openedMedian] = iterCount + TABU_TENURE_CLOSE_MED + TTCO();
     return openedMedian;
 }
 
@@ -1029,6 +1039,8 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::randomWalk( int step )
             curSln.swapCustomer( *this, customer1, customer2, distDelta );
         }
     }
+
+    recoverByReassign();
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
@@ -1051,12 +1063,12 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::recoverByReassign()
 
         // execute the move by the better neighborhood
         if (shift.overflowDelta < swap.overflowDelta) {
-            recoverTabu[shift.param1][shift.param2] = recoverMoveCount + TABU_TENURE_ASSIGN;
+            recoverTabu[shift.param1][shift.param2] = recoverMoveCount + TABU_TENURE_ASSIGN + TTAO();
             curSln.shiftCustomer( *this, shift.param1, shift.param2, shift.distDelta );
             curSln.totalOverflow += shift.overflowDelta;
         } else {
-            recoverTabu[swap.param1][curSln.customerIndex[swap.param1].med] = recoverMoveCount + TABU_TENURE_ASSIGN;
-            recoverTabu[swap.param2][curSln.customerIndex[swap.param2].med] = recoverMoveCount + TABU_TENURE_ASSIGN;
+            recoverTabu[swap.param1][curSln.customerIndex[swap.param1].med] = recoverMoveCount + TABU_TENURE_ASSIGN + TTAO();
+            recoverTabu[swap.param2][curSln.customerIndex[swap.param2].med] = recoverMoveCount + TABU_TENURE_ASSIGN + TTAO();
             curSln.swapCustomer( *this, swap.param1, swap.param2, swap.distDelta );
             curSln.totalOverflow += swap.overflowDelta;
         }
