@@ -576,7 +576,7 @@ typename CPMP<T_DIST, DIST_MULTIPLICATION>::Move CPMP<T_DIST, DIST_MULTIPLICATIO
     for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
         if (!curSln.isMedian( i )) {
             int medi = curSln.customerIndex[i].med;
-            for (int j = graph.minVertexIndex; j <= graph.maxVertexIndex; j++) {
+            for (int j = i + 1; j <= graph.maxVertexIndex; j++) {
                 int medj = curSln.customerIndex[j].med;
                 if (!curSln.isMedian( j ) && (medi != medj)) {
                     Unit capDelta = demandList[i] - demandList[j];
@@ -1029,6 +1029,8 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::randomWalk( int step )
             curSln.swapCustomer( *this, customer1, customer2, distDelta );
         }
     }
+
+    recoverByReassign();
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>

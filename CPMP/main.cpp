@@ -41,9 +41,9 @@ int solve_pmedcap1( ofstream &csvFile, int group, int instanceNum )
     uug.getDistSeqTable();
 
     // for each instance, run some times for judging average performance
-    const int runTime = 8;
+    const int runTime = 4;
     const int maxIterCountBase = 1600;
-    const int tabuTenureAssign = uug.vertexNum * medianNum / 8;
+    const int tabuTenureAssign = uug.vertexNum * medianNum / 5;
     const int tabuTenureOpenMedian = uug.vertexNum / 4;
     const int tabuTenureCloseMedian = medianNum / 3;
     const int maxNoImproveCount = uug.vertexNum * medianNum * 8;
@@ -91,12 +91,12 @@ int main()
     ofstream ofs( "../Instances/log.csv", ios::app );
     //CPMP<DistType>::initResultSheet( ofs ); // call if log.csv is not exist
 
-    //solve_pmedcap1( ofs, 1, 20 );
-    for (int i = 1; i <= 4; i++) {
-        for (int j = 1; j <= 20; j++) {
-            solve_pmedcap1( ofs, i, j );
-        }
-    }
+    solve_pmedcap1( ofs, 1, 1 );
+    //for (int i = 1; i <= 4; i++) {
+    //    for (int j = 1; j <= 20; j++) {
+    //        solve_pmedcap1( ofs, i, j );
+    //    }
+    //}
 
     ofs.close();
     return 0;
