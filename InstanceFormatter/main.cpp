@@ -11,8 +11,8 @@ void formatToCplexInput();
 
 int main()
 {
-    //generateAllGroups();
-    formatToCplexInput();
+    generateAllGroups();
+    //formatToCplexInput();
 }
 
 
@@ -35,8 +35,10 @@ void generateAllGroups()
 
         do {
             fscanf( pf1, "%d%d%d%d%d", &problemNum, &optima, &vertexNum, &medianNum, &medianCap );
-            medianNum = vertexNum * 2 / 5;
-            fprintf( pf2, " %d %d\n %d %d %d", problemNum, optima, vertexNum, vertexNum / 4, 12 * vertexNum / medianNum );
+            medianNum = vertexNum / 4;
+            medianCap = 12 * vertexNum;
+            medianCap = medianCap / medianNum + ((medianCap % medianNum) > 0);
+            fprintf( pf2, " %d %d\n %d %d %d", problemNum, optima, vertexNum, medianNum, medianCap );
 
             n = fread( buf, 1, 4096, pf1 );
             fwrite( buf, n, 1, pf2 );
