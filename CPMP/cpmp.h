@@ -15,7 +15,7 @@
 *       N @ selectOpenedMedian_basic()
 *
 *   Problems:
-*       1. add seed in log file to make it possible to reproduce the calculation.
+*       1./add seed in log file to make it possible to reproduce the calculation.
 *       2. relocateSingleMedian() can be only applied to instances with all medians having same capacity.
 *       3. invoke some math function in standard library which may not compatible with T_DIST type.
 *
@@ -94,7 +94,7 @@ public:
     void solve_ShiftSwapTabuRelocate( int maxIterCount, int maxNoImproveCount, int tabuTenureAssign, T_DIST demandDistributionDamping );
     bool check() const;
 
-    void printResult( std::ostream &os ) const;
+    void printOptima( std::ostream &os ) const;
 
     static void initResultSheet( std::ofstream &csvFile );
     void appendResultToSheet( const std::string &instanceFileName, std::ofstream &csvFile ) const;
@@ -870,11 +870,13 @@ int CPMP<T_DIST, DIST_MULTIPLICATION>::selectOpenedMedian_relaxation( int closed
                 curSln.restCap[curSln.closestMedian[i][0]] -= demandList[i];
             }
             // estimate(increase) the lower bound
-            for (int i = 0; i < medianNum; i++) {
-                Unit cap = curSln.restCap[curSln.medianList[i]];
+            for (int i = graph.minVertexIndex; i <= graph.maxVertexIndex; i++) {
+                int med = curSln.customerIndex[i].med;
+                Unit cap = curSln.restCap[med];
                 if (cap < 0) {
-                    dist -= (graph.distance( i, curSln.closestMedian[i][1] ) - graph.distance( i, curSln.closestMedian[i][0] ))
-                        * cap / capList[curSln.medianList[i]];
+                    dist -= (graph.distance( i, curSln.closestMedian[i][1] ) 
+                        - graph.distance( i, curSln.closestMedian[i][0] ))
+                        * cap / capList[med];
                 }
             }
 
@@ -1381,7 +1383,7 @@ bool CPMP<T_DIST, DIST_MULTIPLICATION>::check() const
 
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::printResult( std::ostream &os ) const
+void CPMP<T_DIST, DIST_MULTIPLICATION>::printOptima( std::ostream &os ) const
 {
     os << (graph.isMultiplied() ? (optima.totalDist / static_cast<double>(graph.DistMultiplication)) : optima.totalDist) << std::endl;
 }

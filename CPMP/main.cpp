@@ -42,11 +42,11 @@ int solve_pmedcap1( ofstream &csvFile, int group, int instanceNum )
 
     // for each instance, run some times for judging average performance
     const int runTime = 4;
-    const int maxIterCountBase = 1600;
+    const int maxIterCountBase = 3200;
     const int tabuTenureAssign = uug.vertexNum * medianNum / 5;
     const int tabuTenureOpenMedian = uug.vertexNum / 4;
     const int tabuTenureCloseMedian = medianNum / 3;
-    const int maxNoImproveCount = uug.vertexNum * medianNum * 8;
+    const int maxNoImproveCount = uug.vertexNum * medianNum * 4;
     const int randomWalkStep = uug.vertexNum * 2;
     const DistType demandDistributionDamping = (uug.DistMultiplication * (gg.getMinCoverRect().right - gg.getMinCoverRect().left) / 4);
     for (int i = 1; i <= runTime; i++) {
@@ -54,7 +54,7 @@ int solve_pmedcap1( ofstream &csvFile, int group, int instanceNum )
             Problem cpmp( uug, dl, medianNum, medianCap );
             cpmp.solve( maxIterCountBase, maxNoImproveCount, tabuTenureAssign,
                 tabuTenureOpenMedian, tabuTenureCloseMedian, demandDistributionDamping, randomWalkStep );
-            cpmp.printResult( cout );
+            cpmp.printOptima( cout );
             if (!cpmp.check()) {
                 csvFile << "[LogicError] ";
             }
@@ -65,17 +65,17 @@ int solve_pmedcap1( ofstream &csvFile, int group, int instanceNum )
             Problem cpmp( uug, dl, medianNum, medianCap );
             cpmp.solve_ShiftSwapTabuRelocateTabu( maxIterCountBase, maxNoImproveCount, tabuTenureAssign,
                 tabuTenureOpenMedian, tabuTenureCloseMedian, demandDistributionDamping );
-            cpmp.printResult( cout );
-            if (!cpmp.check( )) {
+            cpmp.printOptima( cout );
+            if (!cpmp.check()) {
                 csvFile << "[LogicError] ";
             }
-            cpmp.appendResultToSheet( fname.str( ), csvFile );
+            cpmp.appendResultToSheet( fname.str(), csvFile );
         }
         ;
         {
             Problem cpmp( uug, dl, medianNum, medianCap );
             cpmp.solve_ShiftSwapTabuRelocate( maxIterCountBase, maxNoImproveCount, tabuTenureAssign, demandDistributionDamping );
-            cpmp.printResult( cout );
+            cpmp.printOptima( cout );
             if (!cpmp.check()) {
                 csvFile << "[LogicError] ";
             }
@@ -91,12 +91,15 @@ int main()
     ofstream ofs( "../Instances/log.csv", ios::app );
     //CPMP<DistType>::initResultSheet( ofs ); // call if log.csv is not exist
 
-    solve_pmedcap1( ofs, 1, 1 );
-    //for (int i = 1; i <= 4; i++) {
-    //    for (int j = 1; j <= 20; j++) {
-    //        solve_pmedcap1( ofs, i, j );
-    //    }
-    //}
+    //solve_pmedcap1( ofs, 1, 3 );
+    //1.加上服务节点的扰动
+    //2.换服务节点时，对被删服务节点的所有用户，按距离由远到近分配给有剩余容量的服务节点，
+    //    而不是直接给新增的服务节点
+    for (int i = 1; i <= 4; i++) {
+        for (int j = 1; j <= 20; j++) {
+            solve_pmedcap1( ofs, i, j );
+        }
+    }
 
     ofs.close();
     return 0;

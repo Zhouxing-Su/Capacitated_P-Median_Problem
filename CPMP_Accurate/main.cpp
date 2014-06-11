@@ -42,7 +42,7 @@ int solve_pmedcap1( ofstream &csvFile, int group, int instanceNum )
 
     Problem cpmp( uug, dl, medianNum, medianCap );
     cpmp.solve();
-    cpmp.printResult( cout );
+    cpmp.printOptima( cout );
     if (!cpmp.check()) {
         csvFile << "[LogicError] ";
     }

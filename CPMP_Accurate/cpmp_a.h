@@ -5,83 +5,19 @@
 *
 *   Parameters:
 *       DistType @ main.cpp
-*       MAX_ITER_COUNT @ solve()
-*       MAX_NO_IMPROVE_COUNT @ solve()
-*       TABU_TENURE_ASSIGN @ solve()
-*       TABU_TENURE_RELOCATE @ solve()
-*       DEMAND_DISTRIBUTION_DAMPING @ selectOpenedMedian()
 *
 *   Problems:
-*       1. add seed in log file to make it possible to reproduce the calculation.
+*       1./add seed in log file to make it possible to reproduce the calculation.
 *       2. relocateSingleMedian() can be only applied to instances with all medians having same capacity.
 *       3. invoke some math function in standard library which may not compatible with T_DIST type.
 *
 **/
 
-//******** algorithm ********
-//solve()
-//{
-//    gen_init_solution();    // it can be gen_init_solution_randomly or gen_init_solution_greedily
-//
-//    while (stop condition not reached) {
-//        loop until many no improvement search occured {
-//            local_search();     // it can be local_search_with_variable_neighborhood() etc.
-//            relocate_median();
-//        }
-//        perturbation();     // it can be restart, crossover, path_relinking, scatter_search or other diversification procedures
-//    }
-//}
-//
-//gen_init_solution_greedily()
-//{
-//    select P medians randomly and set themselves as the medians of themselves.
-//    for (each customer) {
-//        assign it to the closest median with capacity left.
-//            update the capacity.
-//            add the distance to the objective function value.
-//    }
-//
-//    while (there are nodes not assigned to median) {
-//        assign it to the closest median.
-//    }
-//    fix_to_fit_constraint();
-//}
-//
-//local_search_with_variable_neighborhood()
-//{
-//    while (true) {
-//        if (search_neighborhood_of_reassign_customer_to_new_median() find an improvement) {
-//            update_current_and_best_solution();
-//        } else if (search_neighborhood_of_swap_customers_from_two_medians() find an improvement) {
-//            update_current_and_best_solution();
-//        } else {
-//            local search stop;
-//        }
-//    }
-//}
-//
-//search_neighborhood_of_reassign_customer_to_new_median()
-//{
-//    for (each customer) {
-//        for (each median other than its original median) {
-//            if (the capacity constraint is not violated) {
-//                calculate the delta value of the objective function by assuming that the customer is reassigned to the new median.
-//                if (the delta is less than the minimal delta found before) {
-//                    record the index of the customer and the new median.
-//                } else if (the delta is equal to the minimal delta found before) {
-//                    decide whether to record the index of the customer and the new median by the probability of 1 / TotalOccurrenceOfThisMinima
-//                }
-//            }
-//        }
-//    }
-//
-//    return the minimal delta;
-//}
-//******** algorithm ********
-
 
 #ifndef CPMP_A_H
 #define CPMP_A_H
+
+#include "boost/thread/thread.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -102,7 +38,7 @@ public:
     static const T_DIST MAX_DIST_DELTA = 1000 * DIST_MULTIPLICATION;
     static const T_DIST MAX_TOTAL_DIST = 10000 * DIST_MULTIPLICATION;
 
-    const unsigned medianNum;
+    const int medianNum;
 
     typedef int Unit;    // unit of the demand and capacity
     typedef std::vector<Unit> DemandList;
@@ -137,12 +73,10 @@ public:
     void solve();
 
     void solve_BranchAndCut();
-    void locateMedian( int restMedNum, int firstAvaliableMed );
-    void assignCustomer( int customer );
 
     bool check() const;
 
-    void printResult( std::ostream &os ) const;
+    void printOptima( std::ostream &os ) const;
 
     static void initResultSheet( std::ofstream &csvFile );
     void appendResultToSheet( const std::string &instanceFileName, std::ofstream &csvFile ) const;
@@ -151,16 +85,24 @@ private:
     struct Solution
     {
         Solution() {}
-        Solution( const CPMP &cpmp ) : median( cpmp.medianNum, INVALID_INDEX ), assign( cpmp.graph.vertexAllocNum, INVALID_INDEX ),
-            restCap( cpmp.graph.vertexAllocNum, 0 ), totalDist( 0 )
+        Solution( const CPMP *p ) : cpmp( p ), median( p->medianNum, INVALID_INDEX ),
+            assign( p->graph.vertexAllocNum, INVALID_INDEX ),
+            restCap( p->graph.vertexAllocNum, 0 ), totalDist( 0 ),
+            closestMedian( p->graph.vertexAllocNum, MedianList( p->medianNum ) )
         {
         }
 
         // judging by the vector assign
-        bool isMedian( int vertex )
+        bool isMedian( int vertex ) const
         {
             return (assign[vertex] == vertex);
         }
+
+        T_DIST estimateLowerBound() const;
+        void genClosestMedianList();    // sort medians by distance for each customer
+
+        const CPMP *cpmp;
+        std::vector<MedianList> closestMedian;  // sorted medians by distance for each customer
 
         T_DIST totalDist;
 
@@ -169,16 +111,86 @@ private:
         CapacityList restCap;
     };
 
+    void init();
+    void initCustomerIndexByDescendDemand();
 
+    void estimateUpperBound();
+    void locateMedian( int restMedNum, int firstAvaliableMed );
+    void assignCustomer( int index );
+
+
+    std::vector<int> customerIndexByDescendDemand;
     Solution curSln;
 
     Output optima;
     Timer timer;
     std::string solvingAlgorithm;
+
+    // for statistic
+    friend class Daemon;
+    class Daemon
+    {
+    public:
+        // bind observed object
+        Daemon( CPMP &p ) :cpmp( p ) {}
+
+        void operator()()
+        {
+            while (true) {
+                std::cin.ignore();  // wait for ENTER key press
+                displayAll();
+            }
+        }
+
+        void displayAll()
+        {
+            displayCutState();
+            displayMedianDistribution();
+        }
+
+        void displayCutState( std::ostream &os = std::cout )
+        {
+            cpmp.cut[1][CUT_FAIL] = cpmp.cut[2][CUT_SUCCESS] + cpmp.cut[2][CUT_FAIL];
+
+            for (int i = 0; i < cpmp.CUT_POINT; i++) {
+                os << ' ';
+                for (int j = 0; j < cpmp.CUT_STATE; j++) {
+                    os << cpmp.cut[i][j] << ' ';
+                }
+                os << std::endl;
+            }
+        }
+
+        void displayMedianDistribution( std::ostream &os = std::cout )
+        {
+            os << ' ';
+            for (MedianList::const_iterator iter = cpmp.curSln.median.begin(); iter != cpmp.curSln.median.end(); iter++) {
+                os << *iter << '|';
+            }
+            os << std::endl;
+        }
+
+        void displayMedianDistribution( T_DIST estimateLowerBount, std::ostream &os = std::cout )
+        {
+            os << " [" << estimateLowerBount << "] ";
+            for (MedianList::const_iterator iter = cpmp.curSln.median.begin(); iter != cpmp.curSln.median.end(); iter++) {
+                os << *iter << '|';
+            }
+            os << std::endl;
+        }
+
+    private:
+        CPMP &cpmp;
+    };
+
+    Daemon daemon;
+    static const int CUT_POINT = 3;
+    static const int CUT_STATE = 2;
+    static const int CUT_FAIL = 0;
+    static const int CUT_SUCCESS = 1;
+    std::vector<std::vector<long long> > cut;
+    boost::thread tDaemon;
 };
-
-
-
 
 
 
@@ -191,7 +203,9 @@ private:
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
 CPMP<T_DIST, DIST_MULTIPLICATION>::CPMP( UndirectedGraph<T_DIST, DIST_MULTIPLICATION> &ug, const DemandList &dl, unsigned mn, unsigned mc )
-: graph( ug ), demandList( dl ), medianNum( mn ), capList( ug.vertexAllocNum, mc ), curSln( *this )
+    : graph( ug ), demandList( dl ), medianNum( mn ), capList( ug.vertexAllocNum, mc ), curSln( this ),
+    daemon( *this ), cut( CUT_POINT, std::vector<long long>( CUT_STATE, 0 ) ),
+    customerIndexByDescendDemand( ug.vertexAllocNum )
 {
 }
 
@@ -209,6 +223,14 @@ totalDist( s.totalDist ), median( s.median ), assign( s.assign )
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::init()
+{
+    initCustomerIndexByDescendDemand();
+    estimateUpperBound();
+    tDaemon = boost::thread( daemon );
+}
+
+template <typename T_DIST, int DIST_MULTIPLICATION>
 void CPMP<T_DIST, DIST_MULTIPLICATION>::solve()
 {
     solve_BranchAndCut();
@@ -221,51 +243,160 @@ void CPMP<T_DIST, DIST_MULTIPLICATION>::solve_BranchAndCut()
     ss << '[' << typeid(T_DIST).name() << "]BranchAndCut";
     solvingAlgorithm = ss.str();
 
+    init();
+
     locateMedian( medianNum, graph.maxVertexIndex );
+}
+
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::estimateUpperBound()
+{
+    
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
 void CPMP<T_DIST, DIST_MULTIPLICATION>::locateMedian( int restMedNum, int lastAvaliableMed )
 {
     if (restMedNum == 0) {
-        assignCustomer( graph.maxVertexIndex );
+        curSln.genClosestMedianList();
+        // [cut]0 lower bound of median distribution greater than optima
+        if (curSln.estimateLowerBound() <= optima.totalDist) {
+            cut[0][CUT_FAIL]++;
+            //daemon.displayAll();
+            curSln.totalDist = 0;
+            assignCustomer( graph.maxVertexIndex );
+        } else {
+            cut[0][CUT_SUCCESS]++;
+        }
     } else {
         int medCount = medianNum - restMedNum;
         restMedNum--;
-        for (int med = lastAvaliableMed; med > graph.minVertexIndex; med--) {
+        for (int med = lastAvaliableMed; med >= graph.minVertexIndex; med--) {
             curSln.median[medCount] = med;
             curSln.assign[med] = med;
             curSln.restCap[med] = capList[med] - demandList[med];
             locateMedian( restMedNum, med - 1 );
+            curSln.assign[med] = INVALID_INDEX;
         }
     }
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::assignCustomer( int customer )
+void CPMP<T_DIST, DIST_MULTIPLICATION>::assignCustomer( int index )
 {
-    if (customer < graph.minVertexIndex) { // finish assigning all customers to medians
+    static const int TRY_MEDIAN_NUM = medianNum / 2;
+
+    if (index < graph.minVertexIndex) { // finish assigning all customers to medians
         if (curSln.totalDist < optima.totalDist) {
             optima = Output( *this, curSln );
             Log<T_DIST>::writeln( optima.totalDist );
         }
-    } else if (curSln.isMedian( customer )) {
-        assignCustomer( customer - 1 );
     } else {
-        for (unsigned i = 0; i < medianNum; i++) {
-            int med = curSln.median[i];
-            curSln.restCap[med] -= demandList[customer];
-            if (curSln.restCap[med] >= 0) {
-                curSln.assign[customer] = med;
-                curSln.totalDist += graph.distance( med, customer );
-                assignCustomer( customer - 1 );
-                curSln.totalDist -= graph.distance( med, customer );
+        int customer = customerIndexByDescendDemand[index];
+        if (curSln.isMedian( customer )) {
+            assignCustomer( index - 1 );
+        } else {
+            for (int i = 0; i < TRY_MEDIAN_NUM; i++) {
+                int med = curSln.closestMedian[customer][i];
+                curSln.restCap[med] -= demandList[customer];
+                // [cut]1 capacity overflow
+                if (curSln.restCap[med] >= 0) {
+                    curSln.assign[customer] = med;
+                    curSln.totalDist += graph.distance( med, customer );
+                    // [cut]2 partial distance sum greater than optima
+                    if (curSln.totalDist <= optima.totalDist) {
+                        cut[2][CUT_FAIL]++;
+                        assignCustomer( index - 1 );
+                    } else {
+                        cut[2][CUT_SUCCESS]++;
+                    }
+                    curSln.totalDist -= graph.distance( med, customer );
+                } else {
+                    cut[1][CUT_SUCCESS]++;
+                }
+                curSln.restCap[med] += demandList[customer];
             }
-            curSln.restCap[med] += demandList[customer];
         }
     }
 }
 
+template <typename T_DIST, int DIST_MULTIPLICATION>
+T_DIST CPMP<T_DIST, DIST_MULTIPLICATION>::Solution::estimateLowerBound() const
+{
+    T_DIST dist = 0;
+    CapacityList rc = cpmp->capList;
+
+    std::vector<T_DIST> minDistDelta( cpmp->graph.vertexAllocNum, cpmp->MAX_TOTAL_DIST );
+
+    // get the distance sum with relaxation
+    for (int i = cpmp->graph.minVertexIndex; i <= cpmp->graph.maxVertexIndex; i++) {
+        if (!isMedian( i )) {
+            int med = closestMedian[i][0];
+            dist += cpmp->graph.distance( i, med );
+            rc[med] -= cpmp->demandList[i];
+        }
+    }
+
+    // record the minimal distance delta of every over capacitatied medians
+    for (int i = cpmp->graph.minVertexIndex; i <= cpmp->graph.maxVertexIndex; i++) {
+        int med = closestMedian[i][0];
+        if (restCap[med] < 0) {
+            T_DIST distDelta = (cpmp->graph.distance( i, closestMedian[i][1] )
+                - cpmp->graph.distance( i, med ));
+            if (minDistDelta[med] > distDelta) {
+                minDistDelta[med] = distDelta;
+            }
+        }
+    }
+    // compensate(increase) the lower bound by making minimal distance delta shifting
+    for (int i = cpmp->graph.minVertexIndex; i <= cpmp->graph.maxVertexIndex; i++) {
+        if (minDistDelta[i] != cpmp->MAX_TOTAL_DIST) {
+            dist += minDistDelta[i];
+        }
+    }
+
+    return dist;
+}
+
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::Solution::genClosestMedianList()
+{
+    for (int c = cpmp->graph.minVertexIndex; c <= cpmp->graph.maxVertexIndex; c++) {
+        closestMedian[c][0] = median[0];
+        for (int i = 1; i < cpmp->medianNum; i++) {
+            int j = i;
+            T_DIST dist = cpmp->graph.distance( c, median[i] );
+            for (; j > 0; j--) {
+                int k = j - 1;
+                if (cpmp->graph.distance( c, median[k] ) > dist) {
+                    closestMedian[c][j] = closestMedian[c][k];
+                } else {
+                    break;
+                }
+            }
+            closestMedian[c][j] = median[i];
+        }
+    }
+}
+
+template <typename T_DIST, int DIST_MULTIPLICATION>
+void CPMP<T_DIST, DIST_MULTIPLICATION>::initCustomerIndexByDescendDemand()
+{
+    // insertion sort
+    customerIndexByDescendDemand[graph.minVertexIndex] = graph.minVertexIndex;
+    for (int i = graph.minVertexIndex + 1; i <= graph.maxVertexIndex; i++) {
+        int j = i;
+        for (; j > graph.minVertexIndex; j--) {
+            int k = j - 1;
+            if (demandList[i] > demandList[customerIndexByDescendDemand[k]]) {
+                customerIndexByDescendDemand[j] = customerIndexByDescendDemand[k];
+            } else {
+                break;
+            }
+        }
+        customerIndexByDescendDemand[j] = i;
+    }
+}
 
 
 
@@ -311,9 +442,11 @@ bool CPMP<T_DIST, DIST_MULTIPLICATION>::check() const
 
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
-void CPMP<T_DIST, DIST_MULTIPLICATION>::printResult( std::ostream &os ) const
+void CPMP<T_DIST, DIST_MULTIPLICATION>::printOptima( std::ostream &os ) const
 {
-    os << (graph.isMultiplied() ? (optima.totalDist / static_cast<double>(graph.DistMultiplication)) : optima.totalDist) << std::endl;
+    os << "Opt. "
+        << (graph.isMultiplied() ? (optima.totalDist / static_cast<double>(graph.DistMultiplication)) : optima.totalDist)
+        << std::endl;
 }
 
 template <typename T_DIST, int DIST_MULTIPLICATION>
